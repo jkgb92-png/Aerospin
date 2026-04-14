@@ -223,7 +223,7 @@ function StatsPanel({ spins }: StatsPanelProps) {
         <Text style={[styles.tableHeader, styles.colPayout]}>PAYOUT</Text>
         <Text style={[styles.tableHeader, styles.colNet]}>NET</Text>
         <Text style={[styles.tableHeader, styles.colSymbol]}>SYM</Text>
-        <Text style={[styles.tableHeader, styles.colLines]}>LINES</Text>
+        <Text style={[styles.tableHeader, styles.colLines, styles.colLinesText]}>LINES</Text>
       </View>
 
       <View style={styles.divider} />
@@ -269,7 +269,7 @@ function SpinRow({ spin }: SpinRowProps) {
       >
         {spin.winSymbol ?? '—'}
       </Text>
-      <Text style={[styles.tableCell, styles.colLines]}>{spin.winLines}</Text>
+      <Text style={[styles.tableCell, styles.colLines, styles.colLinesText]}>{spin.winLines}</Text>
     </View>
   );
 }
@@ -408,12 +408,13 @@ const styles = StyleSheet.create({
   },
 
   // Column widths (fixed so numbers align)
-  colNum:    { width: 24 },
-  colBet:    { width: 44 },
-  colPayout: { width: 52 },
-  colNet:    { width: 52 },
-  colSymbol: { flex: 1 },
-  colLines:  { width: 36, textAlign: 'right' },
+  colNum:       { width: 24 },
+  colBet:       { width: 44 },
+  colPayout:    { width: 52 },
+  colNet:       { width: 52 },
+  colSymbol:    { flex: 1 },
+  colLines:     { width: 36 },
+  colLinesText: { textAlign: 'right' },
 
   // Net value colouring
   netPositive: { color: '#4ADE80' }, // flat green

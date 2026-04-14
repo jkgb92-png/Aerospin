@@ -55,9 +55,9 @@ const SCROLL_SPEED_PX_PER_S = 0.5;
 /** How many seconds for one full 256 px tile-width drift before resetting. */
 const LOOP_DURATION_MS = (TILE_SIZE / SCROLL_SPEED_PX_PER_S) * 1000;
 
-/** Default location (Greenwich) if all geolocation attempts fail. */
+/** Default location (Royal Observatory, Greenwich) if all geolocation attempts fail. */
 const DEFAULT_LAT = 51.4769;
-const DEFAULT_LON = 0.0005;
+const DEFAULT_LON = -0.0014;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
