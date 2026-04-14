@@ -1,0 +1,78 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8a3509b7a9824374b8a0d5c430de59df, type: 3}
+  m_Name: UniversalRenderPipelineAsset_Aerospin
+  m_EditorClassIdentifier:
+  # ---- Rendering ----
+  m_RendererDataList:
+  - {fileID: 11400000, guid: aerospin_forward_renderer, type: 2}
+  m_DefaultRendererIndex: 0
+  m_RequireDepthTexture: 1
+  m_RequireOpaqueTexture: 1
+  m_OpaqueDownsampling: 1        # 1 = 2x Bilinear (saves bandwidth)
+  m_SupportsTerrainHoles: 0
+  # ---- Quality ----
+  m_HDR: 1
+  m_MSAA: 4                      # 4x MSAA – balanced for high-end mobile
+  m_RenderScale: 1.0
+  m_UpscalingFilter: 3           # 3 = FSR 2.x (AMD FidelityFX for mobile)
+  m_FsrSharpness: 0.85
+  # ---- Lighting ----
+  m_MainLightRenderingMode: 1    # 1 = Per-Pixel directional
+  m_MainLightShadowsSupported: 1
+  m_MainLightShadowmapResolution: 4096
+  m_AdditionalLightsRenderingMode: 1
+  m_AdditionalLightsShadowmapResolution: 1024
+  m_AdditionalLightsShadowResolutionTierLow: 256
+  m_AdditionalLightsShadowResolutionTierMedium: 512
+  m_AdditionalLightsShadowResolutionTierHigh: 1024
+  m_AdditionalLightsShadowsSupported: 1
+  m_AdditionalLightsPerObjectLimit: 8
+  m_ReflectionProbeBlending: 1
+  m_ReflectionProbeBoxProjection: 1
+  # ---- Real-Time Global Illumination (RTGI via SSGI + APV) ----
+  # Adaptive Probe Volumes (APV) provide baked + dynamic RTGI blending
+  m_LightProbeSystem: 1          # 1 = Adaptive Probe Volumes
+  m_ProbeVolumeTextureSize: 2048
+  m_ProbeVolumeBlendingTextureWidth: 1024
+  m_ProbeVolumeBlendingTextureHeight: 1024
+  m_ProbeVolumeBlendingTextureDepth: 1024
+  # Screen-Space Global Illumination (SSGI) for emissive bounce
+  m_SSGI: 1
+  m_SSGIFullResolution: 0        # Half-res for performance
+  m_SSGIMaxRaySteps: 32
+  m_SSAODownsample: 0
+  m_SSAO: 1
+  # ---- Ray Tracing (Vulkan / Metal Ray Query on compatible GPUs) ----
+  # Enabled at runtime only when device reports rayTracingSupported == true
+  m_RayTracing: 1
+  m_RayTracingMode: 1            # 1 = Quality (use 0 = Performance on mid-tier)
+  m_RayTracedReflections: 1
+  m_RayTracedReflectionQuality: 2  # 0=Low 1=Medium 2=High
+  m_RayTracedGlobalIllumination: 1
+  m_RayTracedGIMode: 1           # 1 = Mixed (raster + RT bounce)
+  m_RayTracedAmbientOcclusion: 1
+  m_RayTracedShadows: 1
+  # ---- Shadows ----
+  m_ShadowDistance: 50
+  m_ShadowCascadeCount: 3
+  m_Shadow1Split: 0.067
+  m_Shadow2Split: 0.2
+  m_Shadow3Split: 0.467
+  m_ShadowDepthBias: 1.0
+  m_ShadowNormalBias: 1.0
+  m_SoftShadowsSupported: 1
+  # ---- Post-Processing ----
+  m_ColorGradingMode: 1          # 1 = HDR Color Grading (LUT)
+  m_ColorGradingLutSize: 64
+  m_UseFastSRGBLinearConversion: 0
+  m_SupportsDynamicBatching: 0   # GPU instancing preferred for AAA mobile
