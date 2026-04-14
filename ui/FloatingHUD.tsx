@@ -5,8 +5,7 @@
  * to subtly tilt a 3-D HUD overlay as the player moves their phone.
  *
  * Dependencies (add to package.json):
- *   expo-sensors          ^13.x   (or react-native-sensors for bare RN)
- *   react-native-reanimated ^3.x
+ *   expo-sensors  ^13.x   (or react-native-sensors for bare RN)
  *
  * Tilt mechanics
  * --------------
@@ -16,18 +15,34 @@
  *    to suppress high-frequency jitter.
  *  • Maximum visible tilt is capped at ±15° to remain subtle.
  *  • An Animated.spring drives the transform so transitions feel fluid.
+ *
+ * UI palette – flat matte surfaces, no gradients
+ * -----------------------------------------------
+ *  SLATE_GREY      #6B7280  – mid-tone neutral for secondary elements
+ *  INDUSTRIAL_WHITE #F0EFEB – off-white for primary text / surfaces
+ *  DEEP_CHARCOAL   #1C1C1C  – near-black background panels
  */
 
 import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Dimensions,
-  Platform,
+  ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Accelerometer } from 'expo-sensors'; // swap for react-native-sensors if needed
+import { Accelerometer } from 'expo-sensors';
+
+// ---------------------------------------------------------------------------
+// Palette – flat matte, no gradients
+// ---------------------------------------------------------------------------
+
+const DEEP_CHARCOAL    = '#1C1C1C';
+const SLATE_GREY       = '#6B7280';
+const INDUSTRIAL_WHITE = '#F0EFEB';
+const CHARCOAL_BORDER  = '#2E2E2E';
+const WIN_AMBER        = '#D97706'; // muted amber, flat
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -49,6 +64,25 @@ const UPDATE_INTERVAL_MS = 16; // ~60 fps
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ---------------------------------------------------------------------------
+// Spin history record (raw math for Stats Panel)
+// ---------------------------------------------------------------------------
+
+export interface SpinRecord {
+  /** Spin serial number within the session (1-based). */
+  spinNumber: number;
+  /** Wager placed on this spin. */
+  bet: number;
+  /** Total payout returned (0 for a no-win spin). */
+  payout: number;
+  /** Net result: payout − bet. */
+  net: number;
+  /** Winning symbol name, or null if no win. */
+  winSymbol: string | null;
+  /** Number of winning paylines triggered, or 0. */
+  winLines: number;
+}
+
+// ---------------------------------------------------------------------------
 // FloatingHUD component
 // ---------------------------------------------------------------------------
 
@@ -59,15 +93,25 @@ interface FloatingHUDProps {
   worldName: string;
   /** Total win amount for the current session. */
   totalWin: number;
+  /**
+   * History of the last N spins (up to 10 shown in the Stats Panel).
+   * Oldest entry first; newest last.
+   */
+  spinHistory?: SpinRecord[];
 }
 
 /**
  * FloatingHUD
  *
- * Renders a semi-transparent HUD card that tilts in response to device
- * orientation. Safe to mount at the root of your game screen.
+ * Renders a flat-matte HUD card that tilts in response to device orientation
+ * and optionally shows a raw-data Stats Panel for the last 10 spins.
  */
-export function FloatingHUD({ credits, worldName, totalWin }: FloatingHUDProps) {
+export function FloatingHUD({
+  credits,
+  worldName,
+  totalWin,
+  spinHistory = [],
+}: FloatingHUDProps) {
   // Animated values for perspective transform
   const tiltX = useRef(new Animated.Value(0)).current; // rotateX: forward/back
   const tiltY = useRef(new Animated.Value(0)).current; // rotateY: left/right
@@ -117,6 +161,8 @@ export function FloatingHUD({ credits, worldName, totalWin }: FloatingHUDProps) 
     outputRange: [`-${MAX_TILT_DEG}deg`, `${MAX_TILT_DEG}deg`],
   });
 
+  const recentSpins = spinHistory.slice(-10);
+
   return (
     <Animated.View
       style={[
@@ -132,15 +178,99 @@ export function FloatingHUD({ credits, worldName, totalWin }: FloatingHUDProps) 
     >
       {/* World badge */}
       <View style={styles.worldBadge}>
-        <Text style={styles.worldText}>{worldName}</Text>
+        <Text style={styles.worldText}>{worldName.toUpperCase()}</Text>
       </View>
 
-      {/* Stat row */}
+      {/* Primary stat row */}
       <View style={styles.statsRow}>
         <HUDStat label="CREDITS" value={credits.toLocaleString()} />
-        <HUDStat label="WIN" value={totalWin.toLocaleString()} accent />
+        <HUDStat label="SESSION WIN" value={totalWin.toLocaleString()} accent />
       </View>
+
+      {/* Stats Panel – raw math for last 10 spins */}
+      {recentSpins.length > 0 && (
+        <StatsPanel spins={recentSpins} />
+      )}
     </Animated.View>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// StatsPanel – last 10 spins, raw data only
+// ---------------------------------------------------------------------------
+
+interface StatsPanelProps {
+  spins: SpinRecord[];
+}
+
+/**
+ * StatsPanel
+ *
+ * Displays a compact table of the last N spins with columns:
+ *   #  BET  PAYOUT  NET  SYMBOL  LINES
+ *
+ * No decorative elements — plain numbers on a flat charcoal surface.
+ */
+function StatsPanel({ spins }: StatsPanelProps) {
+  return (
+    <View style={styles.statsPanel}>
+      <Text style={styles.statsPanelTitle}>LAST {spins.length} SPINS</Text>
+
+      {/* Column headers */}
+      <View style={styles.tableRow}>
+        <Text style={[styles.tableHeader, styles.colNum]}>#</Text>
+        <Text style={[styles.tableHeader, styles.colBet]}>BET</Text>
+        <Text style={[styles.tableHeader, styles.colPayout]}>PAYOUT</Text>
+        <Text style={[styles.tableHeader, styles.colNet]}>NET</Text>
+        <Text style={[styles.tableHeader, styles.colSymbol]}>SYM</Text>
+        <Text style={[styles.tableHeader, styles.colLines]}>LINES</Text>
+      </View>
+
+      <View style={styles.divider} />
+
+      <ScrollView
+        style={styles.tableScroll}
+        scrollEnabled={false}
+        showsVerticalScrollIndicator={false}
+      >
+        {spins.map((spin) => (
+          <SpinRow key={spin.spinNumber} spin={spin} />
+        ))}
+      </ScrollView>
+    </View>
+  );
+}
+
+interface SpinRowProps {
+  spin: SpinRecord;
+}
+
+function SpinRow({ spin }: SpinRowProps) {
+  const netPositive = spin.net > 0;
+  const netNeutral  = spin.net === 0;
+  const netStyle    = netPositive
+    ? styles.netPositive
+    : netNeutral
+      ? styles.netNeutral
+      : styles.netNegative;
+
+  return (
+    <View style={styles.tableRow}>
+      <Text style={[styles.tableCell, styles.colNum]}>{spin.spinNumber}</Text>
+      <Text style={[styles.tableCell, styles.colBet]}>{spin.bet.toFixed(2)}</Text>
+      <Text style={[styles.tableCell, styles.colPayout]}>{spin.payout.toFixed(2)}</Text>
+      <Text style={[styles.tableCell, styles.colNet, netStyle]}>
+        {spin.net >= 0 ? '+' : ''}{spin.net.toFixed(2)}
+      </Text>
+      <Text
+        style={[styles.tableCell, styles.colSymbol]}
+        numberOfLines={1}
+        ellipsizeMode="tail"
+      >
+        {spin.winSymbol ?? '—'}
+      </Text>
+      <Text style={[styles.tableCell, styles.colLines]}>{spin.winLines}</Text>
+    </View>
   );
 }
 
@@ -174,53 +304,51 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Styles
+// Styles – flat matte, zero gradients
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  // HUD card
   hud: {
     position: 'absolute',
     bottom: 32,
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.9,
-    backgroundColor: 'rgba(10, 10, 30, 0.78)',
-    borderRadius: 20,
+    backgroundColor: DEEP_CHARCOAL,
+    borderRadius: 4,
     borderWidth: 1,
-    borderColor: 'rgba(120, 80, 255, 0.6)',
+    borderColor: CHARCOAL_BORDER,
     paddingVertical: 14,
     paddingHorizontal: 20,
-    // iOS shadow
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    // Android elevation
-    elevation: 12,
   },
+
+  // World badge
   worldBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(124, 58, 237, 0.35)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 3,
+    backgroundColor: SLATE_GREY,
+    borderRadius: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
     marginBottom: 10,
   },
   worldText: {
-    color: '#c4b5fd',
-    fontSize: 11,
+    color: INDUSTRIAL_WHITE,
+    fontSize: 10,
     fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
+    letterSpacing: 1.8,
   },
+
+  // Primary stats row
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    marginBottom: 12,
   },
   statCell: {
     alignItems: 'flex-start',
   },
   statLabel: {
-    color: 'rgba(196, 181, 253, 0.7)',
+    color: SLATE_GREY,
     fontSize: 10,
     fontWeight: '600',
     letterSpacing: 1.2,
@@ -228,11 +356,67 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   statValue: {
-    color: '#f5f3ff',
+    color: INDUSTRIAL_WHITE,
     fontSize: 22,
     fontWeight: '800',
   },
   statValueAccent: {
-    color: '#fbbf24', // amber – win highlight
+    color: WIN_AMBER,
   },
+
+  // Stats Panel
+  statsPanel: {
+    marginTop: 4,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: CHARCOAL_BORDER,
+  },
+  statsPanelTitle: {
+    color: SLATE_GREY,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.6,
+    marginBottom: 6,
+  },
+  tableScroll: {
+    maxHeight: 160,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: CHARCOAL_BORDER,
+    marginBottom: 4,
+  },
+
+  // Table rows
+  tableRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 3,
+  },
+  tableHeader: {
+    color: SLATE_GREY,
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+  },
+  tableCell: {
+    color: INDUSTRIAL_WHITE,
+    fontSize: 11,
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+  },
+
+  // Column widths (fixed so numbers align)
+  colNum:    { width: 24 },
+  colBet:    { width: 44 },
+  colPayout: { width: 52 },
+  colNet:    { width: 52 },
+  colSymbol: { flex: 1 },
+  colLines:  { width: 36, textAlign: 'right' },
+
+  // Net value colouring
+  netPositive: { color: '#4ADE80' }, // flat green
+  netNeutral:  { color: SLATE_GREY },
+  netNegative: { color: '#F87171' }, // flat red
 });
