@@ -1,8 +1,16 @@
 /**
- * Aerospin – Floating HUD with Gyroscope Tilt
- * =============================================
+ * Aerospin – Floating HUD with Gyroscope Tilt  (Industrial Surveillance theme)
+ * =============================================================================
  * A React Native component that uses the device's gyroscope / accelerometer
  * to subtly tilt a 3-D HUD overlay as the player moves their phone.
+ *
+ * Visual language: "Industrial Surveillance"
+ * ------------------------------------------
+ *  • Palette: charcoal (#1C1C1C), slate (#4A5058), tactical olive (#3D4A2E),
+ *    signal amber (#D4860A), off-white (#D8D4CC).
+ *  • No neon, no glow, no gradients.  Every element has a hard shadow.
+ *  • GPS coordinate readout replaces decorative world-badge.
+ *  • Typeface styling: condensed, mono, all-caps — military HUD convention.
  *
  * Dependencies (add to package.json):
  *   expo-sensors  ^13.x   (or react-native-sensors for bare RN)
@@ -15,12 +23,6 @@
  *    to suppress high-frequency jitter.
  *  • Maximum visible tilt is capped at ±15° to remain subtle.
  *  • An Animated.spring drives the transform so transitions feel fluid.
- *
- * UI palette – flat matte surfaces, no gradients
- * -----------------------------------------------
- *  SLATE_GREY      #6B7280  – mid-tone neutral for secondary elements
- *  INDUSTRIAL_WHITE #F0EFEB – off-white for primary text / surfaces
- *  DEEP_CHARCOAL   #1C1C1C  – near-black background panels
  */
 
 import React, { useEffect, useRef } from 'react';
@@ -35,14 +37,14 @@ import {
 import { Accelerometer } from 'expo-sensors';
 
 // ---------------------------------------------------------------------------
-// Palette – flat matte, no gradients
+// Palette – flat matte, no gradients (Industrial Surveillance)
 // ---------------------------------------------------------------------------
 
-const DEEP_CHARCOAL    = '#1C1C1C';
-const SLATE_GREY       = '#6B7280';
-const INDUSTRIAL_WHITE = '#F0EFEB';
-const CHARCOAL_BORDER  = '#2E2E2E';
-const WIN_AMBER        = '#D97706'; // muted amber, flat
+const DEEP_CHARCOAL    = '#1C1C1C';  // near-black background panels
+const SLATE_GREY       = '#6B7A85';  // muted slate for secondary text
+const INDUSTRIAL_WHITE = '#D8D4CC';  // off-white for primary readouts
+const CHARCOAL_BORDER  = '#4A5058';  // slate border
+const WIN_AMBER        = '#D4860A';  // signal amber – win readout
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -89,8 +91,8 @@ export interface SpinRecord {
 interface FloatingHUDProps {
   /** Player's current credit balance. */
   credits: number;
-  /** Current active world name (e.g. "Neon Cyber"). */
-  worldName: string;
+  /** GPS coordinate string displayed in the location badge (e.g. "51.5074°N 0.1278°W"). */
+  gpsCoord: string;
   /** Total win amount for the current session. */
   totalWin: number;
   /**
@@ -103,12 +105,12 @@ interface FloatingHUDProps {
 /**
  * FloatingHUD
  *
- * Renders a flat-matte HUD card that tilts in response to device orientation
+ * Renders an industrial HUD card that tilts in response to device orientation
  * and optionally shows a raw-data Stats Panel for the last 10 spins.
  */
 export function FloatingHUD({
   credits,
-  worldName,
+  gpsCoord,
   totalWin,
   spinHistory = [],
 }: FloatingHUDProps) {
@@ -176,9 +178,10 @@ export function FloatingHUD({
         },
       ]}
     >
-      {/* World badge */}
-      <View style={styles.worldBadge}>
-        <Text style={styles.worldText}>{worldName.toUpperCase()}</Text>
+      {/* GPS location badge */}
+      <View style={styles.gpsBadge}>
+        <Text style={styles.gpsLabel}>◈ GPS</Text>
+        <Text style={styles.gpsCoord}>{gpsCoord}</Text>
       </View>
 
       {/* Primary stat row */}
@@ -304,7 +307,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// Styles – flat matte, zero gradients
+// Styles – flat matte, zero gradients (Industrial Surveillance)
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
@@ -314,28 +317,45 @@ const styles = StyleSheet.create({
     bottom: 32,
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.9,
-    backgroundColor: DEEP_CHARCOAL,
-    borderRadius: 4,
+    backgroundColor: 'rgba(28, 28, 28, 0.92)',   // charcoal
+    borderRadius: 4,                               // hard industrial corners
     borderWidth: 1,
     borderColor: CHARCOAL_BORDER,
     paddingVertical: 14,
     paddingHorizontal: 20,
+    // Hard shadow — no soft glow
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 10,
   },
 
-  // World badge
-  worldBadge: {
+  // GPS location badge
+  gpsBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: SLATE_GREY,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3D4A2E',                    // tactical olive
     borderRadius: 2,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 3,
     marginBottom: 10,
   },
-  worldText: {
-    color: INDUSTRIAL_WHITE,
-    fontSize: 10,
+  gpsLabel: {
+    color: '#A8B89A',
+    fontSize: 9,
     fontWeight: '700',
-    letterSpacing: 1.8,
+    letterSpacing: 1.5,
+    textTransform: 'uppercase',
+    marginRight: 6,
+  },
+  gpsCoord: {
+    color: INDUSTRIAL_WHITE,
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    fontVariant: ['tabular-nums'],
   },
 
   // Primary stats row
@@ -351,7 +371,7 @@ const styles = StyleSheet.create({
     color: SLATE_GREY,
     fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 1.2,
+    letterSpacing: 1.5,
     textTransform: 'uppercase',
     marginBottom: 2,
   },
@@ -359,6 +379,7 @@ const styles = StyleSheet.create({
     color: INDUSTRIAL_WHITE,
     fontSize: 22,
     fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   statValueAccent: {
     color: WIN_AMBER,
