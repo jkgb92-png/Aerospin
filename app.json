@@ -1,0 +1,20 @@
+{
+  "expo": {
+    "name": "Aerospin",
+    "slug": "aerospin",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "aerospin",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "platforms": ["ios", "android", "web"],
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Allow Aerospin to use your location for the satellite backdrop."
+        }
+      ]
+    ]
+  }
+}
