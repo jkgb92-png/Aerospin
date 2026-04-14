@@ -1,8 +1,16 @@
 /**
- * Aerospin – Floating HUD with Gyroscope Tilt
- * =============================================
+ * Aerospin – Floating HUD with Gyroscope Tilt  (Industrial Surveillance theme)
+ * =============================================================================
  * A React Native component that uses the device's gyroscope / accelerometer
  * to subtly tilt a 3-D HUD overlay as the player moves their phone.
+ *
+ * Visual language: "Industrial Surveillance"
+ * ------------------------------------------
+ *  • Palette: charcoal (#1C1C1C), slate (#3A4550), tactical olive (#3D4A2E),
+ *    signal amber (#D4860A), off-white (#D8D4CC).
+ *  • No neon, no glow, no gradients.  Every element has a hard shadow.
+ *  • GPS coordinate readout replaces decorative world-badge.
+ *  • Typeface styling: condensed, mono, all-caps — military HUD convention.
  *
  * Dependencies (add to package.json):
  *   expo-sensors          ^13.x   (or react-native-sensors for bare RN)
@@ -55,8 +63,8 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 interface FloatingHUDProps {
   /** Player's current credit balance. */
   credits: number;
-  /** Current active world name (e.g. "Neon Cyber"). */
-  worldName: string;
+  /** GPS coordinate string displayed in the location badge (e.g. "51.5074°N 0.1278°W"). */
+  gpsCoord: string;
   /** Total win amount for the current session. */
   totalWin: number;
 }
@@ -64,10 +72,10 @@ interface FloatingHUDProps {
 /**
  * FloatingHUD
  *
- * Renders a semi-transparent HUD card that tilts in response to device
- * orientation. Safe to mount at the root of your game screen.
+ * Renders a semi-transparent industrial HUD card that tilts in response to
+ * device orientation.  Safe to mount at the root of your game screen.
  */
-export function FloatingHUD({ credits, worldName, totalWin }: FloatingHUDProps) {
+export function FloatingHUD({ credits, gpsCoord, totalWin }: FloatingHUDProps) {
   // Animated values for perspective transform
   const tiltX = useRef(new Animated.Value(0)).current; // rotateX: forward/back
   const tiltY = useRef(new Animated.Value(0)).current; // rotateY: left/right
@@ -130,9 +138,10 @@ export function FloatingHUD({ credits, worldName, totalWin }: FloatingHUDProps) 
         },
       ]}
     >
-      {/* World badge */}
-      <View style={styles.worldBadge}>
-        <Text style={styles.worldText}>{worldName}</Text>
+      {/* GPS location badge */}
+      <View style={styles.gpsBadge}>
+        <Text style={styles.gpsLabel}>◈ GPS</Text>
+        <Text style={styles.gpsCoord}>{gpsCoord}</Text>
       </View>
 
       {/* Stat row */}
@@ -183,34 +192,43 @@ const styles = StyleSheet.create({
     bottom: 32,
     alignSelf: 'center',
     width: SCREEN_WIDTH * 0.9,
-    backgroundColor: 'rgba(10, 10, 30, 0.78)',
-    borderRadius: 20,
+    backgroundColor: 'rgba(28, 28, 28, 0.92)',   // charcoal
+    borderRadius: 4,                               // hard industrial corners
     borderWidth: 1,
-    borderColor: 'rgba(120, 80, 255, 0.6)',
+    borderColor: '#4A5058',                        // slate border
     paddingVertical: 14,
     paddingHorizontal: 20,
-    // iOS shadow
-    shadowColor: '#7c3aed',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.5,
-    shadowRadius: 16,
-    // Android elevation
-    elevation: 12,
+    // Hard shadow — no soft glow
+    shadowColor: '#000000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 10,
   },
-  worldBadge: {
+  gpsBadge: {
     alignSelf: 'flex-start',
-    backgroundColor: 'rgba(124, 58, 237, 0.35)',
-    borderRadius: 8,
-    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#3D4A2E',                    // tactical olive
+    borderRadius: 2,
+    paddingHorizontal: 8,
     paddingVertical: 3,
     marginBottom: 10,
   },
-  worldText: {
-    color: '#c4b5fd',
-    fontSize: 11,
+  gpsLabel: {
+    color: '#A8B89A',
+    fontSize: 9,
     fontWeight: '700',
     letterSpacing: 1.5,
     textTransform: 'uppercase',
+    marginRight: 6,
+  },
+  gpsCoord: {
+    color: '#D8D4CC',                              // off-white readout
+    fontSize: 11,
+    fontWeight: '600',
+    letterSpacing: 0.8,
+    fontVariant: ['tabular-nums'],
   },
   statsRow: {
     flexDirection: 'row',
@@ -220,19 +238,20 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   statLabel: {
-    color: 'rgba(196, 181, 253, 0.7)',
+    color: '#6B7A85',                              // muted slate
     fontSize: 10,
     fontWeight: '600',
-    letterSpacing: 1.2,
+    letterSpacing: 1.5,
     textTransform: 'uppercase',
     marginBottom: 2,
   },
   statValue: {
-    color: '#f5f3ff',
+    color: '#D8D4CC',                              // off-white
     fontSize: 22,
     fontWeight: '800',
+    fontVariant: ['tabular-nums'],
   },
   statValueAccent: {
-    color: '#fbbf24', // amber – win highlight
+    color: '#D4860A',                              // signal amber – win readout
   },
 });

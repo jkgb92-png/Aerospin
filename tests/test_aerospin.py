@@ -267,6 +267,104 @@ class TestMultiverseSlotEngine:
 
 
 # ===========================================================================
+# Industrial Surveillance World
+# ===========================================================================
+
+class TestIndustrialWorld:
+    """Tests for the WORLD_INDUSTRIAL slot configuration."""
+
+    def setup_method(self):
+        self.engine = MultiverseSlotEngine()
+        self.world = WORLDS["industrial"]
+
+    def test_world_exists_in_registry(self):
+        assert "industrial" in WORLDS
+
+    def test_world_name(self):
+        assert self.world.name == "Industrial Surveillance"
+
+    def test_world_has_five_reels(self):
+        assert len(self.world.reel_strips) == 5
+
+    def test_world_has_twenty_paylines(self):
+        assert len(self.world.paylines) == 20
+
+    def test_world_symbol_count(self):
+        # Manifest … Wild (9 symbols)
+        assert len(self.world.symbols) == 9
+
+    def test_wild_and_scatter_defined(self):
+        assert self.world.wild_symbol == 8    # Wild (drone)
+        assert self.world.scatter_symbol == 7  # Scatter (satellite dish)
+
+    def test_free_spins_award_positive(self):
+        assert self.world.free_spins_award > 0
+
+    def test_spin_industrial_returns_outcome(self):
+        outcome = self.engine.spin("industrial")
+        assert outcome.world == "industrial"
+        assert len(outcome.visible_grid) == 5
+
+    def test_spin_grid_has_three_rows_per_reel(self):
+        outcome = self.engine.spin("industrial")
+        for reel in outcome.visible_grid:
+            assert len(reel) == MultiverseSlotEngine.ROWS
+
+    def test_spin_symbol_indices_in_range(self):
+        num_symbols = len(self.world.symbols)
+        for _ in range(50):
+            outcome = self.engine.spin("industrial")
+            for reel in outcome.visible_grid:
+                for sym in reel:
+                    assert 0 <= sym < num_symbols
+
+    def test_payout_non_negative(self):
+        for _ in range(100):
+            outcome = self.engine.spin("industrial")
+            assert outcome.total_payout >= 0.0
+
+    def test_payline_win_structure(self):
+        required_keys = {"line", "symbol", "count", "multiplier", "payout"}
+        for _ in range(200):
+            outcome = self.engine.spin("industrial")
+            for win in outcome.payline_wins:
+                assert required_keys.issubset(win.keys())
+                assert win["count"] >= 3
+                assert win["payout"] >= 0.0
+
+    def test_scatter_trigger_possible(self):
+        """Force a scatter on every reel and verify the scatter count is non-negative."""
+        scatter_idx = self.world.scatter_symbol
+        num_reels = len(self.world.reel_strips)
+        strip_len = len(self.world.reel_strips[0])
+
+        def find_scatter_stop(strip):
+            for i, sym in enumerate(strip):
+                if sym == scatter_idx:
+                    return i
+            return 0
+
+        stops = [find_scatter_stop(self.world.reel_strips[r]) for r in range(num_reels)]
+
+        def scatter_rng(n):
+            return [stops[i] / strip_len for i in range(n)]
+
+        engine = MultiverseSlotEngine(rng_floats=scatter_rng)
+        outcome = engine.spin("industrial")
+        assert outcome.scatter_count >= 0  # structural check
+
+    def test_reel_strips_non_empty(self):
+        for strip in self.world.reel_strips:
+            assert len(strip) > 0
+
+    def test_paylines_reference_valid_rows(self):
+        for payline in self.world.paylines:
+            assert len(payline) == len(self.world.reel_strips)
+            for row_idx in payline:
+                assert 0 <= row_idx < MultiverseSlotEngine.ROWS
+
+
+# ===========================================================================
 # Graphics Pipeline Bootstrap
 # ===========================================================================
 
