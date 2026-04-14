@@ -164,10 +164,73 @@ WORLD_NEON = WorldConfig(
     base_rtp=0.968,
 )
 
+# World 2 – Industrial Surveillance (5×3, 20 paylines)
+# Symbols are grounded in physical, industrial reality: no neon, no fantasy.
+WORLD_INDUSTRIAL = WorldConfig(
+    name="Industrial Surveillance",
+    symbols=[
+        "Manifest",    # 0 – lowest value: shipping manifest document
+        "Oil Barrel",  # 1 – steel drum
+        "GPS Coord",   # 2 – printed coordinate tag
+        "Anchor Bolt", # 3 – heavy hex-head fastener
+        "Crane Hook",  # 4 – forged steel lifting hook
+        "Container",   # 5 – intermodal freight container
+        "Brass Key",   # 6 – heavy machined brass key
+        "Scatter",     # 7 – satellite dish receiver (scatter)
+        "Wild",        # 8 – all-purpose wild (drone silhouette)
+    ],
+    reel_strips=[
+        _build_strip({0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 2, 7: 1, 8: 1}, seed=3001),
+        _build_strip({0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 2, 7: 1, 8: 1}, seed=3002),
+        _build_strip({0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 2, 7: 1, 8: 1}, seed=3003),
+        _build_strip({0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 2, 7: 1, 8: 1}, seed=3004),
+        _build_strip({0: 9, 1: 8, 2: 7, 3: 6, 4: 5, 5: 4, 6: 2, 7: 1, 8: 1}, seed=3005),
+    ],
+    paylines=[
+        (1, 1, 1, 1, 1),  # middle row
+        (0, 0, 0, 0, 0),  # top row
+        (2, 2, 2, 2, 2),  # bottom row
+        (0, 1, 2, 1, 0),  # V shape
+        (2, 1, 0, 1, 2),  # inverted V
+        (0, 0, 1, 2, 2),
+        (2, 2, 1, 0, 0),
+        (1, 0, 0, 0, 1),
+        (1, 2, 2, 2, 1),
+        (0, 1, 0, 1, 0),
+        (2, 1, 2, 1, 2),
+        (1, 0, 1, 2, 1),
+        (1, 2, 1, 0, 1),
+        (0, 1, 1, 1, 0),
+        (2, 1, 1, 1, 2),
+        (1, 1, 0, 1, 1),
+        (1, 1, 2, 1, 1),
+        (0, 0, 2, 0, 0),
+        (2, 2, 0, 2, 2),
+        (1, 0, 2, 0, 1),
+    ],
+    pay_table={
+        8: {3: 60,  4: 250,  5: 1200},  # Wild (drone silhouette)
+        7: {3: 0,   4: 0,    5: 0},     # Scatter – no line pay
+        6: {3: 30,  4: 120,  5: 600},   # Brass Key
+        5: {3: 15,  4: 60,   5: 280},   # Container
+        4: {3: 8,   4: 35,   5: 140},   # Crane Hook
+        3: {3: 5,   4: 20,   5: 80},    # Anchor Bolt
+        2: {3: 3,   4: 12,   5: 50},    # GPS Coord
+        1: {3: 2,   4: 7,    5: 25},    # Oil Barrel
+        0: {3: 1,   4: 3,    5: 10},    # Manifest
+    },
+    wild_symbol=8,
+    scatter_symbol=7,
+    scatter_min_count=3,
+    free_spins_award=10,
+    base_rtp=0.963,
+)
+
 # World registry
 WORLDS: dict[str, WorldConfig] = {
     "classic": WORLD_CLASSIC,
     "neon": WORLD_NEON,
+    "industrial": WORLD_INDUSTRIAL,
 }
 
 
