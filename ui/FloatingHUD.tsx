@@ -122,35 +122,44 @@ export function FloatingHUD({
   const filteredRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
+    let subscription: ReturnType<typeof Accelerometer.addListener> | null = null;
 
-    const subscription = Accelerometer.addListener(({ x, y }) => {
-      // Apply low-pass filter to smooth sensor noise
-      const prev = filteredRef.current;
-      const smoothX = prev.x + LOW_PASS_ALPHA * (x - prev.x);
-      const smoothY = prev.y + LOW_PASS_ALPHA * (y - prev.y);
-      filteredRef.current = { x: smoothX, y: smoothY };
+    try {
+      Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
 
-      // Map sensor range [-1, 1] → tilt degrees [-MAX, MAX]
-      const targetTiltX = clamp(-smoothY * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
-      const targetTiltY = clamp(smoothX * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
+      subscription = Accelerometer.addListener(({ x, y }) => {
+        // Apply low-pass filter to smooth sensor noise
+        const prev = filteredRef.current;
+        const smoothX = prev.x + LOW_PASS_ALPHA * (x - prev.x);
+        const smoothY = prev.y + LOW_PASS_ALPHA * (y - prev.y);
+        filteredRef.current = { x: smoothX, y: smoothY };
 
-      Animated.spring(tiltX, {
-        toValue: targetTiltX,
-        useNativeDriver: true,
-        friction: 8,
-        tension: 60,
-      }).start();
+        // Map sensor range [-1, 1] → tilt degrees [-MAX, MAX]
+        const targetTiltX = clamp(-smoothY * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
+        const targetTiltY = clamp(smoothX * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
 
-      Animated.spring(tiltY, {
-        toValue: targetTiltY,
-        useNativeDriver: true,
-        friction: 8,
-        tension: 60,
-      }).start();
-    });
+        Animated.spring(tiltX, {
+          toValue: targetTiltX,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 60,
+        }).start();
 
-    return () => subscription.remove();
+        Animated.spring(tiltY, {
+          toValue: targetTiltY,
+          useNativeDriver: true,
+          friction: 8,
+          tension: 60,
+        }).start();
+      });
+    } catch (err) {
+      // Accelerometer unavailable on this platform/device – tilt stays at 0
+      if (__DEV__) {
+        console.warn('[FloatingHUD] Accelerometer unavailable:', err);
+      }
+    }
+
+    return () => subscription?.remove();
   }, [tiltX, tiltY]);
 
   // Convert degree numbers to interpolated rotation strings
