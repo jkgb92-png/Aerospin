@@ -50,6 +50,7 @@ import {
   Animated,
   Dimensions,
   Easing,
+  Pressable,
   StyleSheet,
   Text,
   View,
@@ -435,6 +436,11 @@ interface IndustrialCasinoDashboardProps {
   visibleSymbols?: number[][];
   /** Set of reel indices to highlight as part of a win. */
   winningReels?: Set<number>;
+  /**
+   * Called when the player presses the SPIN button.
+   * Wire this to sound playback and reel animation in the parent.
+   */
+  onSpin?: () => void;
 }
 
 const DEFAULT_GRID: number[][] = Array.from({ length: 5 }, () => [0, 1, 2]);
@@ -452,6 +458,7 @@ export function IndustrialCasinoDashboard({
   bottomRightCoord = '51.4974°N  0.1078°W',
   visibleSymbols = DEFAULT_GRID,
   winningReels = new Set(),
+  onSpin,
 }: IndustrialCasinoDashboardProps) {
   return (
     <View style={styles.root}>
@@ -477,6 +484,21 @@ export function IndustrialCasinoDashboard({
         visibleSymbols={visibleSymbols}
         winningReels={winningReels}
       />
+
+      {/* ── Spin button ── */}
+      <Pressable
+        style={({ pressed }) => [
+          styles.spinButton,
+          pressed && styles.spinButtonPressed,
+          !onSpin && styles.spinButtonDisabled,
+        ]}
+        onPress={onSpin}
+        disabled={!onSpin}
+        accessibilityRole="button"
+        accessibilityLabel="Spin the reels"
+      >
+        <Text style={styles.spinButtonText}>◈  SPIN</Text>
+      </Pressable>
     </View>
   );
 }
@@ -758,5 +780,31 @@ const styles = StyleSheet.create({
     borderBottomColor: C.AMBER,
     opacity: 0.30,
     backgroundColor: 'transparent',
+  },
+
+  // Spin button
+  spinButton: {
+    alignSelf: 'center',
+    marginTop: 8,
+    marginBottom: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 40,
+    backgroundColor: C.STEEL,
+    borderWidth: 1,
+    borderColor: C.AMBER,
+    borderRadius: 2,
+  },
+  spinButtonPressed: {
+    backgroundColor: C.OLIVE,
+  },
+  spinButtonDisabled: {
+    opacity: 0.4,
+  },
+  spinButtonText: {
+    color: C.AMBER,
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 4,
+    textTransform: 'uppercase',
   },
 });

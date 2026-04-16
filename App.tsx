@@ -1,10 +1,17 @@
-import React, { Component, ReactNode, useState } from 'react';
+import React, { Component, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { EarthBackdrop } from './ui/EarthBackdrop';
 import { IndustrialCasinoDashboard } from './ui/IndustrialCasinoDashboard';
 import { FloatingHUD, SpinRecord } from './ui/FloatingHUD';
+import {
+  loadSounds,
+  unloadSounds,
+  playSound,
+  playReelSettleSequence,
+  SoundEvent,
+} from './ui/SoundDesign';
 
 // ---------------------------------------------------------------------------
 // Sample data – replace with real game state / state management
@@ -86,6 +93,33 @@ const errStyles = StyleSheet.create({
 export default function App() {
   const [credits] = useState(1250);
   const [totalWin] = useState(12.50);
+  const soundsReady = useRef(false);
+
+  // Load sounds once on mount; unload on unmount.
+  // On web, loadSounds() itself is safe before any user gesture – only
+  // playback (triggered by the SPIN button) requires a prior gesture.
+  useEffect(() => {
+    let mounted = true;
+    loadSounds()
+      .then(() => {
+        if (mounted) soundsReady.current = true;
+      })
+      .catch(() => {
+        // Non-fatal: audio will be silently absent if loading fails
+        // (e.g. unsupported platform, missing permissions)
+      });
+    return () => {
+      mounted = false;
+      unloadSounds().catch(() => {});
+    };
+  }, []);
+
+  const handleSpin = useCallback(() => {
+    if (!soundsReady.current) return;
+    playSound(SoundEvent.REEL_SPIN)
+      .then(() => playReelSettleSequence(5))
+      .catch(() => {});
+  }, []);
 
   return (
     <ErrorBoundary>
@@ -98,6 +132,7 @@ export default function App() {
           credits={credits}
           totalWin={totalWin}
           visibleSymbols={IDLE_SYMBOLS}
+          onSpin={handleSpin}
         />
 
         {/* Gyro-tilt HUD overlay pinned to the bottom */}
