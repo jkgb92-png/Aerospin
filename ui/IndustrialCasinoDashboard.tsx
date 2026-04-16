@@ -45,7 +45,7 @@
  *  DIM_TEXT  #6B7A85   secondary labels
  */
 
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 import {
   Animated,
   Dimensions,
@@ -285,22 +285,36 @@ function buildWireframeLines(
  * Shows a continuously rotating wireframe terrain block – the "drone-view
  * rotation of the current map tile" requested in the design spec.
  *
- * The rotation angle is derived from a setInterval ticker (one tick per
- * animation frame at ~60 Hz) rather than an Animated listener so that the
- * component avoids the deprecated addListener/removeListener API while still
- * driving purely JS-side geometry computation.
+ * The rotation angle is driven by a requestAnimationFrame loop so that it
+ * stays in sync with the display refresh and does not pile up callbacks when
+ * the JS thread is busy (unlike setInterval).
  */
 function AeroPaneSidebar() {
   const [rotT, setRotT] = React.useState(0);
+  const rafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(null);
+  const startTimeRef = useRef<number | null>(null);
+  const mountedRef = useRef(true);
+
+  const animate = useCallback((timestamp: number) => {
+    if (!mountedRef.current) return;
+    if (startTimeRef.current === null) {
+      startTimeRef.current = timestamp;
+    }
+    const elapsed = (timestamp - startTimeRef.current) % ROTATE_PERIOD_MS;
+    setRotT(elapsed / ROTATE_PERIOD_MS);
+    rafRef.current = requestAnimationFrame(animate);
+  }, []);
 
   useEffect(() => {
-    const startTime = Date.now();
-    const id = setInterval(() => {
-      const elapsed = (Date.now() - startTime) % ROTATE_PERIOD_MS;
-      setRotT(elapsed / ROTATE_PERIOD_MS);
-    }, 16); // ~60 fps
-    return () => clearInterval(id);
-  }, []);
+    mountedRef.current = true;
+    rafRef.current = requestAnimationFrame(animate);
+    return () => {
+      mountedRef.current = false;
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
+    };
+  }, [animate]);
 
   const lines = buildWireframeLines(rotT, WIRE_SIZE);
 
@@ -495,23 +509,26 @@ function StatusChip({
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  // Root
+  // Root – transparent so EarthBackdrop satellite imagery shows through
   root: {
     flex: 1,
-    backgroundColor: C.CHARCOAL,
+    backgroundColor: 'transparent',
     paddingTop: 12,
     paddingHorizontal: 8,
   },
 
-  // Status bar
+  // Status bar – semi-transparent tint so text stays readable over the backdrop
   statusBar: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    backgroundColor: 'rgba(28, 28, 28, 0.60)',
     borderBottomWidth: 1,
     borderBottomColor: C.SLATE,
     paddingBottom: 8,
+    paddingHorizontal: 4,
     marginBottom: 8,
+    borderRadius: 2,
   },
   statusTitle: {
     color: C.DIM_TEXT,

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { Component, ReactNode, useState } from 'react';
+import { StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
 import { EarthBackdrop } from './ui/EarthBackdrop';
@@ -28,6 +28,58 @@ const IDLE_SYMBOLS: number[][] = [
 ];
 
 // ---------------------------------------------------------------------------
+// ErrorBoundary – catches render-phase exceptions so the screen never goes
+// fully blank.  Shows a styled fallback instead of a white void.
+// ---------------------------------------------------------------------------
+
+interface EBState { error: Error | null }
+
+class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
+  state: EBState = { error: null };
+
+  static getDerivedStateFromError(error: Error): EBState {
+    return { error };
+  }
+
+  render() {
+    const { error } = this.state;
+    if (error) {
+      return (
+        <View style={errStyles.container}>
+          <Text style={errStyles.title}>⚠  SYSTEM ERROR</Text>
+          <Text style={errStyles.message}>{error.message}</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+const errStyles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#1C1C1C',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+  },
+  title: {
+    color: '#D4860A',
+    fontSize: 16,
+    fontWeight: '800',
+    letterSpacing: 2,
+    marginBottom: 12,
+  },
+  message: {
+    color: '#D8D4CC',
+    fontSize: 13,
+    textAlign: 'center',
+    opacity: 0.75,
+    lineHeight: 20,
+  },
+});
+
+// ---------------------------------------------------------------------------
 // App root
 // ---------------------------------------------------------------------------
 
@@ -36,27 +88,29 @@ export default function App() {
   const [totalWin] = useState(12.50);
 
   return (
-    <View style={styles.root}>
-      {/* Satellite tile backdrop (fills behind all other UI) */}
-      <EarthBackdrop />
+    <ErrorBoundary>
+      <View style={styles.root}>
+        {/* Satellite tile backdrop (fills behind all other UI) */}
+        <EarthBackdrop />
 
-      {/* Main casino dashboard */}
-      <IndustrialCasinoDashboard
-        credits={credits}
-        totalWin={totalWin}
-        visibleSymbols={IDLE_SYMBOLS}
-      />
+        {/* Main casino dashboard */}
+        <IndustrialCasinoDashboard
+          credits={credits}
+          totalWin={totalWin}
+          visibleSymbols={IDLE_SYMBOLS}
+        />
 
-      {/* Gyro-tilt HUD overlay pinned to the bottom */}
-      <FloatingHUD
-        credits={credits}
-        gpsCoord="51.5074°N  0.1278°W"
-        totalWin={totalWin}
-        spinHistory={SAMPLE_SPINS}
-      />
+        {/* Gyro-tilt HUD overlay pinned to the bottom */}
+        <FloatingHUD
+          credits={credits}
+          gpsCoord="51.5074°N  0.1278°W"
+          totalWin={totalWin}
+          spinHistory={SAMPLE_SPINS}
+        />
 
-      <StatusBar style="light" />
-    </View>
+        <StatusBar style="light" />
+      </View>
+    </ErrorBoundary>
   );
 }
 

@@ -182,7 +182,17 @@ export function EarthBackdrop() {
 
   // ── 3. Build tile grid (2 columns × 3 rows to fully cover any screen) ───
   if (!tileCoords) {
-    return <View style={styles.placeholder} />;
+    return (
+      <View style={styles.placeholder}>
+        {/* Subtle grid overlay to hint at the satellite tile that is loading */}
+        {Array.from({ length: 6 }).map((_, i) => (
+          <View key={`h${i}`} style={[styles.phGridLine, { top: `${(i + 1) * 14}%` }]} />
+        ))}
+        {Array.from({ length: 6 }).map((_, i) => (
+          <View key={`v${i}`} style={[styles.phGridLineV, { left: `${(i + 1) * 14}%` }]} />
+        ))}
+      </View>
+    );
   }
 
   const { x: tx, y: ty } = tileCoords;
@@ -235,7 +245,23 @@ const styles = StyleSheet.create({
   },
   placeholder: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: '#1C1C1C',
+    backgroundColor: '#111510',
+  },
+  phGridLine: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    height: 1,
+    backgroundColor: '#4E9A60',
+    opacity: 0.12,
+  },
+  phGridLineV: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    width: 1,
+    backgroundColor: '#4E9A60',
+    opacity: 0.12,
   },
   tileCanvas: {
     position: 'absolute',
