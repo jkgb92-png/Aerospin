@@ -31,7 +31,7 @@
  *   expo-image       ^1.x   (or plain <Image> from react-native)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, StyleSheet, View } from 'react-native';
 import * as Location from 'expo-location';
 import { PERFORMANCE_BUDGET, TOKENS } from './designTokens';
@@ -61,9 +61,9 @@ const DEFAULT_LAT = 51.4769;
 const DEFAULT_LON = -0.0014;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
-const BACKDROP_BASE_DIM_OPACITY = 0.42;
-const BACKDROP_FAILURE_DIM_STEP = 0.01;
-const BACKDROP_MAX_DIM_OPACITY = 0.55;
+const BACKDROP_BASE_DIM_OPACITY = TOKENS.backdrop.baseDimOpacity;
+const BACKDROP_FAILURE_DIM_STEP = TOKENS.backdrop.failureDimStep;
+const BACKDROP_MAX_DIM_OPACITY = TOKENS.backdrop.maxDimOpacity;
 
 // ---------------------------------------------------------------------------
 // Geo → tile math (Web Mercator / Slippy Map)
@@ -121,6 +121,15 @@ export function EarthBackdrop() {
   const [tileLoadFailures, setTileLoadFailures] = useState(0);
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const handleTileLoadError = useCallback(() => {
+    setTileLoadFailures((prev) => {
+      const next = prev + 1;
+      if (next >= PERFORMANCE_BUDGET.maxTileLoadFailuresBeforeFallback) {
+        setUseStaticFallback(true);
+      }
+      return next;
+    });
+  }, []);
 
   // ── 1. Resolve player location ──────────────────────────────────────────
   useEffect(() => {
@@ -226,15 +235,7 @@ export function EarthBackdrop() {
             { left: col * TILE_SIZE, top: row * TILE_SIZE },
           ]}
           resizeMode="cover"
-          onError={() => {
-            setTileLoadFailures((prev) => {
-              const next = prev + 1;
-              if (next >= PERFORMANCE_BUDGET.maxTileLoadFailuresBeforeFallback) {
-                setUseStaticFallback(true);
-              }
-              return next;
-            });
-          }}
+          onError={handleTileLoadError}
         />,
       );
     }

@@ -203,7 +203,7 @@ function SatelliteHUDTile({ topLeftCoord, bottomRightCoord }: SatelliteHUDTilePr
 
 /** Rotating period in ms. */
 const ROTATE_PERIOD_MS = 6000;
-const WIRE_SEGMENT_HALF_HEIGHT = -0.5;
+const WIRE_SEGMENT_VERTICAL_OFFSET = -0.5;
 
 /**
  * Produces a flat list of {x1,y1,x2,y2} line segments that describe a simple
@@ -345,7 +345,7 @@ function AeroPaneSidebar() {
                 height: 1,
                 backgroundColor: C.SIGNAL_G,
                 opacity: 0.55,
-                transform: [{ translateX: -length / 2 }, { translateY: WIRE_SEGMENT_HALF_HEIGHT }, { rotate: `${angle}deg` }],
+                transform: [{ translateX: -length / 2 }, { translateY: WIRE_SEGMENT_VERTICAL_OFFSET }, { rotate: `${angle}deg` }],
               }}
             />
           );

@@ -27,6 +27,11 @@ export const TOKENS = {
     hard: 2,
     soft: 4,
   },
+  backdrop: {
+    baseDimOpacity: 0.42,
+    failureDimStep: 0.01,
+    maxDimOpacity: 0.55,
+  },
 } as const;
 
 // Chromebook-first visual performance budget.

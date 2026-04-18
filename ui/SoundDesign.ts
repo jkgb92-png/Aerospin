@@ -171,13 +171,13 @@ export function playReelSettleSequence(
   reelCount: number,
   delayMs = 120,
 ): void {
-  if (reelCount <= 1) {
-    playSound(SoundEvent.REEL_SETTLE, 0.7);
+  if (reelCount <= 0) {
     return;
   }
+  const reelVolumeDenominator = Math.max(1, reelCount - 1);
   for (let i = 0; i < reelCount; i++) {
     setTimeout(() => {
-      playSound(SoundEvent.REEL_SETTLE, 0.7 + 0.3 * (i / (reelCount - 1)));
+      playSound(SoundEvent.REEL_SETTLE, 0.7 + 0.3 * (i / reelVolumeDenominator));
     }, i * delayMs);
   }
 }
