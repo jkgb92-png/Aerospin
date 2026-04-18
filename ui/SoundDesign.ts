@@ -172,9 +172,7 @@ export function playReelSettleSequence(
   delayMs = 120,
 ): void {
   if (reelCount <= 1) {
-    setTimeout(() => {
-      playSound(SoundEvent.REEL_SETTLE, 1);
-    }, 0);
+    playSound(SoundEvent.REEL_SETTLE, 0.7);
     return;
   }
   for (let i = 0; i < reelCount; i++) {

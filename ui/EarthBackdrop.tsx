@@ -61,6 +61,9 @@ const DEFAULT_LAT = 51.4769;
 const DEFAULT_LON = -0.0014;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const BACKDROP_BASE_DIM_OPACITY = 0.42;
+const BACKDROP_FAILURE_DIM_STEP = 0.01;
+const BACKDROP_MAX_DIM_OPACITY = 0.55;
 
 // ---------------------------------------------------------------------------
 // Geo → tile math (Web Mercator / Slippy Map)
@@ -197,15 +200,18 @@ export function EarthBackdrop() {
   // Extra column & row so the scroll loop never shows a gap at the edges
   const requestedCols = Math.ceil(SCREEN_W / TILE_SIZE) + 2;
   const requestedRows = Math.ceil(SCREEN_H / TILE_SIZE) + 2;
-  const maxCols = Math.max(2, Math.floor(Math.sqrt(PERFORMANCE_BUDGET.maxActiveTiles)));
-  const cols = Math.min(requestedCols, maxCols);
-  const rows = Math.max(
+  const aspect = SCREEN_W / SCREEN_H;
+  const maxCols = Math.max(
     2,
-    Math.min(
-      requestedRows,
-      Math.floor(PERFORMANCE_BUDGET.maxActiveTiles / cols),
-    ),
+    Math.floor(Math.sqrt(PERFORMANCE_BUDGET.maxActiveTiles * aspect)),
   );
+  const maxRowsByAspect = Math.max(
+    2,
+    Math.floor(PERFORMANCE_BUDGET.maxActiveTiles / maxCols),
+  );
+  const cols = Math.min(requestedCols, maxCols);
+  const maxRowsByBudget = Math.max(2, Math.floor(PERFORMANCE_BUDGET.maxActiveTiles / cols));
+  const rows = Math.min(requestedRows, maxRowsByAspect, maxRowsByBudget);
 
   const tiles: React.ReactNode[] = [];
   for (let row = 0; row < rows; row++) {
@@ -248,7 +254,7 @@ export function EarthBackdrop() {
       <View
         style={[
           styles.dimOverlay,
-          { backgroundColor: `rgba(0, 0, 0, ${Math.min(0.55, 0.42 + tileLoadFailures * 0.01)})` },
+          { backgroundColor: `rgba(0, 0, 0, ${computeDimOpacity(tileLoadFailures)})` },
         ]}
       />
     </View>
@@ -258,11 +264,11 @@ export function EarthBackdrop() {
 function StaticWireframeBackdrop() {
   return (
     <View style={styles.placeholder}>
-      {Array.from({ length: 8 }).map((_, i) => (
-        <View key={`h${i}`} style={[styles.phGridLine, { top: `${(i + 1) * 11}%` }]} />
+      {Array.from({ length: 6 }).map((_, i) => (
+        <View key={`h${i}`} style={[styles.phGridLine, { top: `${(i + 1) * 14}%` }]} />
       ))}
-      {Array.from({ length: 8 }).map((_, i) => (
-        <View key={`v${i}`} style={[styles.phGridLineV, { left: `${(i + 1) * 11}%` }]} />
+      {Array.from({ length: 6 }).map((_, i) => (
+        <View key={`v${i}`} style={[styles.phGridLineV, { left: `${(i + 1) * 14}%` }]} />
       ))}
       <View style={styles.placeholderDim} />
     </View>
@@ -319,3 +325,13 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.42)',
   },
 });
+
+function computeDimOpacity(tileLoadFailures: number): number {
+  return Math.max(
+    BACKDROP_BASE_DIM_OPACITY,
+    Math.min(
+      BACKDROP_MAX_DIM_OPACITY,
+      BACKDROP_BASE_DIM_OPACITY + tileLoadFailures * BACKDROP_FAILURE_DIM_STEP,
+    ),
+  );
+}
