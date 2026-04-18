@@ -10,7 +10,7 @@
     "platforms": ["ios", "android", "web"],
     "web": {
       "bundler": "metro",
-      "output": "static",
+      "output": "single",
       "baseUrl": "/Aerospin"
     },
     "plugins": [

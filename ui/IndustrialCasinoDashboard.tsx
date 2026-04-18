@@ -55,20 +55,21 @@ import {
   Text,
   View,
 } from 'react-native';
+import { TOKENS } from './designTokens';
 
 // ---------------------------------------------------------------------------
 // Palette constants
 // ---------------------------------------------------------------------------
 
 const C = {
-  CHARCOAL:  '#1C1C1C',
-  STEEL:     '#2E3338',
-  SLATE:     '#3A4550',
-  OLIVE:     '#3D4A2E',
-  SIGNAL_G:  '#4E9A60',
-  AMBER:     '#D4860A',
-  OFF_WHITE: '#D8D4CC',
-  DIM_TEXT:  '#6B7A85',
+  CHARCOAL: TOKENS.color.charcoal,
+  STEEL: TOKENS.color.steel,
+  SLATE: TOKENS.color.slate,
+  OLIVE: TOKENS.color.olive,
+  SIGNAL_G: TOKENS.color.signalGreen,
+  AMBER: TOKENS.color.amber,
+  OFF_WHITE: TOKENS.color.offWhite,
+  DIM_TEXT: TOKENS.color.dimText,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -330,19 +331,20 @@ function AeroPaneSidebar() {
           const dy = seg.y2 - seg.y1;
           const length = Math.sqrt(dx * dx + dy * dy);
           const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+          const centerX = (seg.x1 + seg.x2) / 2;
+          const centerY = (seg.y1 + seg.y2) / 2;
           return (
             <View
               key={i}
               style={{
                 position: 'absolute',
-                left: seg.x1,
-                top: seg.y1,
+                left: centerX,
+                top: centerY,
                 width: length,
                 height: 1,
                 backgroundColor: C.SIGNAL_G,
                 opacity: 0.55,
-                transform: [{ rotate: `${angle}deg` }],
-                transformOrigin: 'left center',
+                transform: [{ translateX: -length / 2 }, { rotate: `${angle}deg` }],
               }}
             />
           );
@@ -645,13 +647,12 @@ const styles = StyleSheet.create({
   },
   sweepLine: {
     position: 'absolute',
-    left: '50%',
+    left: 0,
     top: '50%',
-    width: TILE_W / 2,
+    width: TILE_W,
     height: 1,
     backgroundColor: C.SIGNAL_G,
     opacity: 0.65,
-    transformOrigin: 'left center',
   },
   reticle: {
     width: 14,

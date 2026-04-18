@@ -35,23 +35,24 @@ import {
   View,
 } from 'react-native';
 import { Accelerometer } from 'expo-sensors';
+import { PERFORMANCE_BUDGET, TOKENS } from './designTokens';
 
 // ---------------------------------------------------------------------------
 // Palette – flat matte, no gradients (Industrial Surveillance)
 // ---------------------------------------------------------------------------
 
-const DEEP_CHARCOAL    = '#1C1C1C';  // near-black background panels
-const SLATE_GREY       = '#6B7A85';  // muted slate for secondary text
-const INDUSTRIAL_WHITE = '#D8D4CC';  // off-white for primary readouts
-const CHARCOAL_BORDER  = '#4A5058';  // slate border
-const WIN_AMBER        = '#D4860A';  // signal amber – win readout
+const DEEP_CHARCOAL = TOKENS.color.charcoal; // near-black background panels
+const SLATE_GREY = TOKENS.color.dimText; // muted slate for secondary text
+const INDUSTRIAL_WHITE = TOKENS.color.offWhite; // off-white for primary readouts
+const CHARCOAL_BORDER = '#4A5058'; // slate border
+const WIN_AMBER = TOKENS.color.amber; // signal amber – win readout
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 /** Maximum tilt angle in degrees. */
-const MAX_TILT_DEG = 15;
+const MAX_TILT_DEG = PERFORMANCE_BUDGET.maxHudTiltDegrees;
 
 /**
  * Low-pass filter coefficient α ∈ (0, 1].
@@ -138,19 +139,8 @@ export function FloatingHUD({
         const targetTiltX = clamp(-smoothY * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
         const targetTiltY = clamp(smoothX * MAX_TILT_DEG, -MAX_TILT_DEG, MAX_TILT_DEG);
 
-        Animated.spring(tiltX, {
-          toValue: targetTiltX,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 60,
-        }).start();
-
-        Animated.spring(tiltY, {
-          toValue: targetTiltY,
-          useNativeDriver: true,
-          friction: 8,
-          tension: 60,
-        }).start();
+        tiltX.setValue(targetTiltX);
+        tiltY.setValue(targetTiltY);
       });
     } catch (err) {
       // Accelerometer unavailable on this platform/device – tilt stays at 0
@@ -338,6 +328,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.8,
     shadowRadius: 6,
     elevation: 10,
+    zIndex: TOKENS.zIndex.hud,
   },
 
   // GPS location badge
@@ -447,7 +438,7 @@ const styles = StyleSheet.create({
   colLinesText: { textAlign: 'right' },
 
   // Net value colouring
-  netPositive: { color: '#4ADE80' }, // flat green
+  netPositive: { color: TOKENS.color.success }, // flat green
   netNeutral:  { color: SLATE_GREY },
-  netNegative: { color: '#F87171' }, // flat red
+  netNegative: { color: TOKENS.color.danger }, // flat red
 });
