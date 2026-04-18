@@ -76,6 +76,7 @@ const SOUND_ASSETS: Record<SoundEvent, ReturnType<typeof require>> = {
 // ---------------------------------------------------------------------------
 
 const _pool = new Map<SoundEvent, Audio.Sound>();
+let _audioPrimedForGesture = false;
 
 /**
  * Pre-load all sound assets into memory.
@@ -129,6 +130,30 @@ export async function unloadSounds(): Promise<void> {
     [..._pool.values()].map((sound) => sound.unloadAsync()),
   );
   _pool.clear();
+  _audioPrimedForGesture = false;
+}
+
+/**
+ * Prime web/mobile audio context from a user gesture to reduce first-play latency.
+ * Safe to call repeatedly; priming runs once per load cycle.
+ */
+export async function primeAudioForUserGesture(): Promise<void> {
+  if (_audioPrimedForGesture) return;
+  await Promise.all(
+    [..._pool.values()].map(async (sound) => {
+      try {
+        await sound.setVolumeAsync(0);
+        await sound.setPositionAsync(0);
+        await sound.playAsync();
+        await sound.pauseAsync();
+        await sound.setPositionAsync(0);
+        await sound.setVolumeAsync(1);
+      } catch {
+        // If priming fails on a platform, normal playback still attempts later.
+      }
+    }),
+  );
+  _audioPrimedForGesture = true;
 }
 
 // ---------------------------------------------------------------------------
@@ -146,9 +171,13 @@ export function playReelSettleSequence(
   reelCount: number,
   delayMs = 120,
 ): void {
+  if (reelCount <= 0) {
+    return;
+  }
+  const reelVolumeDenominator = Math.max(1, reelCount - 1);
   for (let i = 0; i < reelCount; i++) {
     setTimeout(() => {
-      playSound(SoundEvent.REEL_SETTLE, 0.7 + 0.3 * (i / (reelCount - 1)));
+      playSound(SoundEvent.REEL_SETTLE, 0.7 + 0.3 * (i / reelVolumeDenominator));
     }, i * delayMs);
   }
 }

@@ -10,8 +10,10 @@ import {
   unloadSounds,
   playSound,
   playReelSettleSequence,
+  primeAudioForUserGesture,
   SoundEvent,
 } from './ui/SoundDesign';
+import { TOKENS } from './ui/designTokens';
 
 // ---------------------------------------------------------------------------
 // Sample data – replace with real game state / state management
@@ -116,7 +118,8 @@ export default function App() {
 
   const handleSpin = useCallback(() => {
     if (!soundsReady.current) return;
-    playSound(SoundEvent.REEL_SPIN)
+    primeAudioForUserGesture()
+      .then(() => playSound(SoundEvent.REEL_SPIN))
       .then(() => playReelSettleSequence(5))
       .catch(() => {});
   }, []);
@@ -152,6 +155,7 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: '#1C1C1C',
+    backgroundColor: TOKENS.color.charcoal,
+    zIndex: TOKENS.zIndex.dashboard,
   },
 });

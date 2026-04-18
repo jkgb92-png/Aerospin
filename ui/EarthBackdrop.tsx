@@ -31,9 +31,10 @@
  *   expo-image       ^1.x   (or plain <Image> from react-native)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Animated, Dimensions, Image, StyleSheet, View } from 'react-native';
 import * as Location from 'expo-location';
+import { PERFORMANCE_BUDGET, TOKENS } from './designTokens';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -60,6 +61,9 @@ const DEFAULT_LAT = 51.4769;
 const DEFAULT_LON = -0.0014;
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
+const BACKDROP_BASE_DIM_OPACITY = TOKENS.backdrop.baseDimOpacity;
+const BACKDROP_FAILURE_DIM_STEP = TOKENS.backdrop.failureDimStep;
+const BACKDROP_MAX_DIM_OPACITY = TOKENS.backdrop.maxDimOpacity;
 
 // ---------------------------------------------------------------------------
 // Geo → tile math (Web Mercator / Slippy Map)
@@ -113,8 +117,19 @@ export function EarthBackdrop() {
   const [tileCoords, setTileCoords] = useState<{ x: number; y: number } | null>(
     null,
   );
+  const [useStaticFallback, setUseStaticFallback] = useState(false);
+  const [tileLoadFailures, setTileLoadFailures] = useState(0);
   const scrollAnim = useRef(new Animated.Value(0)).current;
   const loopRef = useRef<Animated.CompositeAnimation | null>(null);
+  const handleTileLoadError = useCallback(() => {
+    setTileLoadFailures((prev) => {
+      const next = prev + 1;
+      if (next >= PERFORMANCE_BUDGET.maxTileLoadFailuresBeforeFallback) {
+        setUseStaticFallback(true);
+      }
+      return next;
+    });
+  }, []);
 
   // ── 1. Resolve player location ──────────────────────────────────────────
   useEffect(() => {
@@ -151,6 +166,8 @@ export function EarthBackdrop() {
 
       if (!cancelled) {
         setTileCoords({ x: lon2tile(lon, ZOOM), y: lat2tile(lat, ZOOM) });
+        setUseStaticFallback(false);
+        setTileLoadFailures(0);
       }
     }
 
@@ -163,6 +180,7 @@ export function EarthBackdrop() {
   // ── 2. Start slow-scroll loop once tiles are known ───────────────────────
   useEffect(() => {
     if (!tileCoords) return;
+    if (useStaticFallback) return;
 
     scrollAnim.setValue(0);
     const loop = Animated.loop(
@@ -178,27 +196,31 @@ export function EarthBackdrop() {
     return () => {
       loop.stop();
     };
-  }, [tileCoords, scrollAnim]);
+  }, [tileCoords, scrollAnim, useStaticFallback]);
 
   // ── 3. Build tile grid (2 columns × 3 rows to fully cover any screen) ───
-  if (!tileCoords) {
+  if (!tileCoords || useStaticFallback) {
     return (
-      <View style={styles.placeholder}>
-        {/* Subtle grid overlay to hint at the satellite tile that is loading */}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <View key={`h${i}`} style={[styles.phGridLine, { top: `${(i + 1) * 14}%` }]} />
-        ))}
-        {Array.from({ length: 6 }).map((_, i) => (
-          <View key={`v${i}`} style={[styles.phGridLineV, { left: `${(i + 1) * 14}%` }]} />
-        ))}
-      </View>
+      <StaticWireframeBackdrop />
     );
   }
 
   const { x: tx, y: ty } = tileCoords;
   // Extra column & row so the scroll loop never shows a gap at the edges
-  const cols = Math.ceil(SCREEN_W / TILE_SIZE) + 2;
-  const rows = Math.ceil(SCREEN_H / TILE_SIZE) + 2;
+  const requestedCols = Math.ceil(SCREEN_W / TILE_SIZE) + 2;
+  const requestedRows = Math.ceil(SCREEN_H / TILE_SIZE) + 2;
+  const aspect = SCREEN_W / SCREEN_H;
+  const maxCols = Math.max(
+    2,
+    Math.floor(Math.sqrt(PERFORMANCE_BUDGET.maxActiveTiles * aspect)),
+  );
+  const maxRowsByAspect = Math.max(
+    2,
+    Math.floor(PERFORMANCE_BUDGET.maxActiveTiles / maxCols),
+  );
+  const cols = Math.min(requestedCols, maxCols);
+  const maxRowsByBudget = Math.max(2, Math.floor(PERFORMANCE_BUDGET.maxActiveTiles / cols));
+  const rows = Math.min(requestedRows, maxRowsByAspect, maxRowsByBudget);
 
   const tiles: React.ReactNode[] = [];
   for (let row = 0; row < rows; row++) {
@@ -213,6 +235,7 @@ export function EarthBackdrop() {
             { left: col * TILE_SIZE, top: row * TILE_SIZE },
           ]}
           resizeMode="cover"
+          onError={handleTileLoadError}
         />,
       );
     }
@@ -229,7 +252,26 @@ export function EarthBackdrop() {
         {tiles}
       </Animated.View>
       {/* Dim overlay so the satellite image doesn't overpower the game UI */}
-      <View style={styles.dimOverlay} />
+      <View
+        style={[
+          styles.dimOverlay,
+          { backgroundColor: `rgba(0, 0, 0, ${computeDimOpacity(tileLoadFailures)})` },
+        ]}
+      />
+    </View>
+  );
+}
+
+function StaticWireframeBackdrop() {
+  return (
+    <View style={styles.placeholder}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <View key={`h${i}`} style={[styles.phGridLine, { top: `${(i + 1) * 14}%` }]} />
+      ))}
+      {Array.from({ length: 6 }).map((_, i) => (
+        <View key={`v${i}`} style={[styles.phGridLineV, { left: `${(i + 1) * 14}%` }]} />
+      ))}
+      <View style={styles.placeholderDim} />
     </View>
   );
 }
@@ -242,6 +284,7 @@ const styles = StyleSheet.create({
   container: {
     ...StyleSheet.absoluteFillObject,
     overflow: 'hidden',
+    zIndex: TOKENS.zIndex.backdrop,
   },
   placeholder: {
     ...StyleSheet.absoluteFillObject,
@@ -252,7 +295,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 1,
-    backgroundColor: '#4E9A60',
+    backgroundColor: TOKENS.color.signalGreen,
     opacity: 0.12,
   },
   phGridLineV: {
@@ -260,8 +303,12 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     width: 1,
-    backgroundColor: '#4E9A60',
+    backgroundColor: TOKENS.color.signalGreen,
     opacity: 0.12,
+  },
+  placeholderDim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
   },
   tileCanvas: {
     position: 'absolute',
@@ -276,6 +323,16 @@ const styles = StyleSheet.create({
   },
   dimOverlay: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    backgroundColor: 'rgba(0, 0, 0, 0.42)',
   },
 });
+
+function computeDimOpacity(tileLoadFailures: number): number {
+  return Math.max(
+    BACKDROP_BASE_DIM_OPACITY,
+    Math.min(
+      BACKDROP_MAX_DIM_OPACITY,
+      BACKDROP_BASE_DIM_OPACITY + tileLoadFailures * BACKDROP_FAILURE_DIM_STEP,
+    ),
+  );
+}
