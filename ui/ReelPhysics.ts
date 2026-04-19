@@ -32,7 +32,10 @@
  * ```
  */
 
-import { Animated } from 'react-native';
+import { Animated, Platform } from 'react-native';
+
+// useNativeDriver is not supported on web; native platforms benefit from it.
+const USE_NATIVE_DRIVER = Platform.OS !== 'web';
 
 // ---------------------------------------------------------------------------
 // Physics constants
@@ -121,13 +124,13 @@ export function spinReel(
     toValue: overshootTarget,
     ...DECEL_SPRING,
     velocity: effectiveVelocity,
-    useNativeDriver: true,
+    useNativeDriver: USE_NATIVE_DRIVER,
   }).start(() => {
     // Phase 2: soft underdamped settle back to the true stop
     Animated.spring(animValue, {
       toValue: stopValue,
       ...SETTLE_SPRING,
-      useNativeDriver: true,
+      useNativeDriver: USE_NATIVE_DRIVER,
     }).start(({ finished }) => {
       if (finished) {
         onSettle?.();

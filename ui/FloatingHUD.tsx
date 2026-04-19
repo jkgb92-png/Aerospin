@@ -29,13 +29,21 @@ import React, { useEffect, useRef } from 'react';
 import {
   Animated,
   Dimensions,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import { Accelerometer } from 'expo-sensors';
 import { PERFORMANCE_BUDGET, TOKENS } from './designTokens';
+
+// Accelerometer is a native-only API that stalls JS execution on web because
+// browsers have no native accelerometer driver.  We lazy-require it only on
+// native platforms so the web bundle never includes the sensor module.
+const AccelerometerModule =
+  Platform.OS !== 'web'
+    ? (require('expo-sensors') as typeof import('expo-sensors')).Accelerometer
+    : null;
 
 // ---------------------------------------------------------------------------
 // Palette – flat matte, no gradients (Industrial Surveillance)
@@ -123,12 +131,16 @@ export function FloatingHUD({
   const filteredRef = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    let subscription: ReturnType<typeof Accelerometer.addListener> | null = null;
+    // On web there is no native accelerometer driver; skip entirely so that
+    // setUpdateInterval / addListener never run in the browser.
+    if (!AccelerometerModule) return;
+
+    let subscription: ReturnType<typeof AccelerometerModule.addListener> | null = null;
 
     try {
-      Accelerometer.setUpdateInterval(UPDATE_INTERVAL_MS);
+      AccelerometerModule.setUpdateInterval(UPDATE_INTERVAL_MS);
 
-      subscription = Accelerometer.addListener(({ x, y }) => {
+      subscription = AccelerometerModule.addListener(({ x, y }) => {
         // Apply low-pass filter to smooth sensor noise
         const prev = filteredRef.current;
         const smoothX = prev.x + LOW_PASS_ALPHA * (x - prev.x);
@@ -143,7 +155,7 @@ export function FloatingHUD({
         tiltY.setValue(targetTiltY);
       });
     } catch (err) {
-      // Accelerometer unavailable on this platform/device – tilt stays at 0
+      // Accelerometer unavailable on this native device – tilt stays at 0
       if (__DEV__) {
         console.warn('[FloatingHUD] Accelerometer unavailable:', err);
       }
