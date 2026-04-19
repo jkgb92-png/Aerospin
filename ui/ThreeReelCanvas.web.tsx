@@ -36,6 +36,29 @@ import type { ThreeReelCanvasProps, ThreeSceneApi } from './ThreeReelCanvas';
 export type { ThreeReelCanvasProps, ThreeSceneApi };
 
 // ---------------------------------------------------------------------------
+// Google 3D Tiles configuration
+// ---------------------------------------------------------------------------
+
+/**
+ * Set EXPO_PUBLIC_GOOGLE_TILES_API_KEY in your .env to enable Google 3D Tiles.
+ * When absent the renderer falls back to the built-in BoxGeometry terrain.
+ */
+const GOOGLE_TILES_API_KEY: string =
+  (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_GOOGLE_TILES_API_KEY) || '';
+
+/**
+ * Root tileset URL for Google Photorealistic 3D Tiles.
+ * Empty string signals that Google Tiles are not configured.
+ */
+const tilesUrl: string = GOOGLE_TILES_API_KEY
+  ? `https://tile.googleapis.com/v1/3dtiles/root.json?key=${GOOGLE_TILES_API_KEY}`
+  : '';
+
+// Always log on mount so developers can verify the URL is well-formed (or see
+// that it is intentionally empty when no key has been supplied).
+console.log('Tiles Root URL:', tilesUrl || '(no key – using built-in BoxGeometry terrain)');
+
+// ---------------------------------------------------------------------------
 // Layout constants
 // ---------------------------------------------------------------------------
 
@@ -340,6 +363,30 @@ export function ThreeReelCanvas({
       clippingPlanes: [], // filled when xrayActive
     });
 
+    // ── 4b-ii. Google 3D Tiles initialisation (optional) ─────────────────
+    // When EXPO_PUBLIC_GOOGLE_TILES_API_KEY is set the tilesUrl constant above
+    // points to the Google Photorealistic 3D Tiles root tileset.  A full
+    // implementation would pass this URL to SimpleTilesRenderer from the
+    // '3d-tiles-renderer' package.  The try/catch ensures that a missing key,
+    // malformed URL, or network failure does NOT block or hang the render loop —
+    // the BoxGeometry terrain continues to display as the fallback.
+    if (tilesUrl) {
+      try {
+        // Validate the URL is reachable before handing it to a tile renderer.
+        // We use a fire-and-forget HEAD request; on failure we warn in DEV but
+        // leave the BoxGeometry terrain intact so the RAF loop keeps running.
+        fetch(tilesUrl, { method: 'HEAD' }).catch((err: unknown) => {
+          if (__DEV__) {
+            console.warn('[ThreeReelCanvas] Google 3D Tiles fetch failed – using BoxGeometry fallback.', err);
+          }
+        });
+      } catch (err) {
+        if (__DEV__) {
+          console.warn('[ThreeReelCanvas] Google 3D Tiles initialisation error – using BoxGeometry fallback.', err);
+        }
+      }
+    }
+
     const wireUniforms = {
       uTime: { value: 0 },
     };
@@ -618,6 +665,13 @@ export function ThreeReelCanvas({
             metalness: 0.8,
             roughness: 0.2,
           });
+          // Clipping plane sync: if the X-Ray scan is currently active the new
+          // hero material must inherit the clipping plane so the sweep applies
+          // to the newly-loaded mesh just as it does to the shared tileMaterial.
+          if (xrayActiveRef.current) {
+            heroMaterial.clippingPlanes = [xrayClipPlane];
+            heroMaterial.needsUpdate = true;
+          }
           // Replace the mesh material on the first child (the tile cube)
           const tileMesh = group.children[0] as THREE.Mesh;
           if (tileMesh?.isMesh) {

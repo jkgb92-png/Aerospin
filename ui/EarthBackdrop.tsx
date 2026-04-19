@@ -187,7 +187,7 @@ export function EarthBackdrop() {
       Animated.timing(scrollAnim, {
         toValue: -TILE_SIZE,     // drift one full tile before reset
         duration: LOOP_DURATION_MS,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     );
     loopRef.current = loop;
