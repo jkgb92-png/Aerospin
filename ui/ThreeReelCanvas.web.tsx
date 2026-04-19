@@ -11,26 +11,29 @@
  *  • Dynamic Golden Hour lighting via useGoldenHourLight
  *  • Satellite → isometric camera fly-by when a spin starts
  *  • Voxelisation spin transition (random Y-scale scramble → settle)
- *  • Bloom post-processing pass (luminanceThreshold 0.6, intensity 1.4)
+ *  • Selective bloom targeting the holographic scanline colour only
  *  • Velocity-based motion blur (custom Effect, decays exponentially)
  *  • Chromatic aberration scaled by spin velocity
+ *  • X-Ray subsurface clip plane (THREE.Plane, localClippingEnabled)
+ *  • Voxel sub-layer grid at y = -5 (neon-green DataTexture, xray-only)
+ *  • loadHeroAsset() placeholder for high-detail tile swaps
  */
 
 import React, { useEffect, useRef } from 'react';
 import { Dimensions, StyleSheet, View } from 'react-native';
 import * as THREE from 'three';
 import {
-  BloomEffect,
   ChromaticAberrationEffect,
   Effect,
   EffectComposer,
   EffectPass,
   RenderPass,
+  SelectiveBloomEffect,
 } from 'postprocessing';
 import { useGoldenHourLight } from './useGoldenHourLight';
-import type { ThreeReelCanvasProps } from './ThreeReelCanvas';
+import type { ThreeReelCanvasProps, ThreeSceneApi } from './ThreeReelCanvas';
 
-export type { ThreeReelCanvasProps };
+export type { ThreeReelCanvasProps, ThreeSceneApi };
 
 // ---------------------------------------------------------------------------
 // Layout constants
@@ -44,6 +47,9 @@ const TILE_D = 0.3;
 const SPACING_X = 1.0;
 const SPACING_Y = 1.0;
 
+/** Y position of the voxel sub-layer grid. */
+const SUBLAYER_Y = -5;
+
 // ---------------------------------------------------------------------------
 // Camera positions
 // ---------------------------------------------------------------------------
@@ -55,6 +61,7 @@ const CAM_TWEEN_S   = 1.2; // seconds for satellite → isometric tween
 
 // ---------------------------------------------------------------------------
 // Holographic wireframe ShaderMaterial (scanline + edge glow)
+// Colour: #00FF88 – selected for bloom by SelectiveBloomEffect
 // ---------------------------------------------------------------------------
 
 const WIRE_VERT = `
@@ -83,7 +90,8 @@ void main() {
 
   float alpha = max(intensity * 0.6, edge * 0.35);
   if (alpha < 0.01) discard;
-  gl_FragColor = vec4(0.0, 1.0, 0.533, alpha); // #00FF88
+  // Full-brightness #00FF88 so SelectiveBloom picks it up cleanly
+  gl_FragColor = vec4(0.0, 1.0, 0.533, alpha);
 }
 `;
 
@@ -154,6 +162,38 @@ function parseLon(gpsCoord: string): number {
 }
 
 // ---------------------------------------------------------------------------
+// Voxel sub-layer texture
+// Generates a 16 × 16 DataTexture with a neon-green (#00FF88) voxel-grid
+// pattern on a near-black background.
+// ---------------------------------------------------------------------------
+
+function buildVoxelTexture(): THREE.DataTexture {
+  const SIZE = 16;
+  const BORDER = 1; // 1-pixel black border around each voxel cell
+  const data = new Uint8Array(SIZE * SIZE * 4);
+
+  for (let y = 0; y < SIZE; y++) {
+    for (let x = 0; x < SIZE; x++) {
+      const idx = (y * SIZE + x) * 4;
+      const onBorder = x % 4 < BORDER || y % 4 < BORDER;
+      // #00FF88 = R:0, G:255, B:136. Border cells use a darker shade (R:0, G:180, B:60)
+      // so the grid lines read as deep green against the bright neon fill.
+      data[idx]     = 0;                       // R (both branches)
+      data[idx + 1] = onBorder ? 180 : 255;   // G – bright fill / dimmer border
+      data[idx + 2] = onBorder ? 60  : 136;   // B – #00FF88 fill / dark-green border
+      data[idx + 3] = 255;                     // A
+    }
+  }
+
+  const tex = new THREE.DataTexture(data, SIZE, SIZE, THREE.RGBAFormat);
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.repeat.set(2, 2);
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// ---------------------------------------------------------------------------
 // ThreeReelCanvas component
 // ---------------------------------------------------------------------------
 
@@ -168,20 +208,25 @@ export function ThreeReelCanvas({
   spinPhase = 'idle',
   spinNumber = 0,
   gpsCoord = '51.5074°N  0.1278°W',
+  xrayActive = false,
   onCameraTransitionEnd,
+  onSceneReady,
 }: ThreeReelCanvasProps) {
   const containerRef = useRef<View>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const spinPhaseRef = useRef(spinPhase);
   const spinNumberRef = useRef(spinNumber);
-  // Stable ref for the callback so the RAF loop always calls the latest version
-  // without requiring the outer useEffect to re-run when the prop identity changes.
+  const xrayActiveRef = useRef(xrayActive);
+  // Stable refs for callbacks so the RAF loop always calls the latest version
   const onCameraTransitionEndRef = useRef(onCameraTransitionEnd);
+  const onSceneReadyRef = useRef(onSceneReady);
 
   // Keep refs in sync with latest props (accessed inside RAF loop)
   useEffect(() => { spinPhaseRef.current = spinPhase; }, [spinPhase]);
   useEffect(() => { spinNumberRef.current = spinNumber; }, [spinNumber]);
+  useEffect(() => { xrayActiveRef.current = xrayActive; }, [xrayActive]);
   useEffect(() => { onCameraTransitionEndRef.current = onCameraTransitionEnd; }, [onCameraTransitionEnd]);
+  useEffect(() => { onSceneReadyRef.current = onSceneReady; }, [onSceneReady]);
 
   // Longitude for golden-hour light
   const lon = parseLon(gpsCoord);
@@ -203,6 +248,9 @@ export function ThreeReelCanvas({
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.1;
+    // Enable per-material clipping planes for the X-Ray subsurface mode.
+    // Without this flag Three.js ignores material.clippingPlanes entirely.
+    renderer.localClippingEnabled = true;
     container.appendChild(renderer.domElement);
 
     // ── 2. Scene ──────────────────────────────────────────────────────────
@@ -232,19 +280,30 @@ export function ThreeReelCanvas({
       camTweenActive = true;
     }
 
-    // ── 4. Tile terrain ───────────────────────────────────────────────────
+    // ── 4a. X-Ray subsurface clipping plane ───────────────────────────────
+    // The plane equation is: normal · point + constant ≥ 0 → visible.
+    // Normal (0, 1, 0) + constant = 0 → visible region: y ≥ 0.
+    // When xray is active this clips the lower halves of all main tiles,
+    // revealing the sub-layer grid sitting at y = SUBLAYER_Y below them.
+    const xrayClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+
+    // ── 4b. Main-tile terrain ─────────────────────────────────────────────
     const tileGeom = new THREE.BoxGeometry(TILE_W, TILE_H, TILE_D);
     const wireGeom = new THREE.PlaneGeometry(TILE_W - 0.04, TILE_H - 0.04);
 
     const tileGroups: THREE.Group[] = [];
+    // Collect wireframe overlay meshes for SelectiveBloom targeting
+    const wireOverlays: THREE.Mesh[] = [];
 
-    // Emissive base colour prevents black tiles when lighting is dim
+    // Emissive base colour prevents black tiles when lighting is dim.
+    // clippingPlanes is populated only while xray mode is active (see RAF loop).
     const tileMaterial = new THREE.MeshStandardMaterial({
       color: 0x2e3d2e,
       emissive: new THREE.Color(0x1a2a1a),
       emissiveIntensity: 0.6,
       metalness: 0.4,
       roughness: 0.7,
+      clippingPlanes: [], // filled when xrayActive
     });
 
     const wireUniforms = {
@@ -277,30 +336,72 @@ export function ThreeReelCanvas({
         overlay.position.z = TILE_D / 2 + 0.005;
         overlay.renderOrder = 1;
         group.add(overlay);
+        wireOverlays.push(overlay);
 
         scene.add(group);
         tileGroups.push(group);
       }
     }
 
-    // ── 5. Post-processing ────────────────────────────────────────────────
+    // ── 4c. Voxel sub-layer grid ──────────────────────────────────────────
+    // A second 5 × 3 grid of tiles positioned at y = SUBLAYER_Y (-5).
+    // Only visible when xrayActive is true so the X-Ray clip cross-section
+    // reveals this "underground" terrain layer.
+    const voxelTexture = buildVoxelTexture();
+    const sublayerGeom = new THREE.BoxGeometry(TILE_W, TILE_H * 0.5, TILE_D * 0.6);
+    const sublayerMaterial = new THREE.MeshStandardMaterial({
+      map: voxelTexture,
+      emissive: new THREE.Color(0x00ff88),
+      emissiveIntensity: 0.45,
+      metalness: 0.1,
+      roughness: 0.5,
+    });
+
+    const sublayerGroup = new THREE.Group();
+    sublayerGroup.position.y = SUBLAYER_Y;
+    sublayerGroup.visible = false; // only shown when xrayActive
+
+    for (let col = 0; col < COLS; col++) {
+      for (let row = 0; row < ROWS; row++) {
+        const mesh = new THREE.Mesh(sublayerGeom, sublayerMaterial);
+        mesh.position.set(
+          (col - 2) * SPACING_X,
+          (1 - row) * SPACING_Y,
+          0,
+        );
+        sublayerGroup.add(mesh);
+      }
+    }
+    scene.add(sublayerGroup);
+
+    // ── 5. Post-processing (SelectiveBloom) ───────────────────────────────
+    // SelectiveBloomEffect restricts the bloom glow to a specific set of
+    // scene objects.  By adding only the holographic wireframe overlay meshes
+    // we guarantee that the #00FF88 scanlines bleed off screen while the
+    // rest of the scene (tiles, terrain) is not over-bloomed.
     const composer = new EffectComposer(renderer);
     composer.addPass(new RenderPass(scene, camera));
 
     const blurEffect = new VelocityBlurEffect();
-    const bloomEffect = new BloomEffect({
-      luminanceThreshold: 0.6,
-      luminanceSmoothing: 0.1,
-      intensity: 1.4,
+
+    const bloomEffect = new SelectiveBloomEffect(scene, camera, {
+      luminanceThreshold: 0.25, // lower than global BloomEffect so the green
+      luminanceSmoothing: 0.1,  // scanlines always qualify even at lower brightness
+      intensity: 2.0,           // stronger glow since selection is narrow
       mipmapBlur: true,
     });
+    // Add every holographic overlay mesh to the bloom selection.
+    // Selection is a Set<Object3D>; SelectiveBloomEffect renders bloom only
+    // on geometry that belongs to this set.
+    wireOverlays.forEach((m) => bloomEffect.selection.add(m));
+
     const aberrationEffect = new ChromaticAberrationEffect({
       offset: new THREE.Vector2(0, 0),
       radialModulation: true,
       modulationOffset: 0.15,
     });
 
-    // Order: blur → bloom → aberration
+    // Order: blur → selective bloom → aberration
     composer.addPass(new EffectPass(camera, blurEffect, bloomEffect, aberrationEffect));
 
     // ── 6. Voxelisation state ─────────────────────────────────────────────
@@ -316,10 +417,29 @@ export function ThreeReelCanvas({
     // ── 7. Velocity / blur state ──────────────────────────────────────────
     let spinVelocity = 0;
 
-    // ── 8. RAF loop ───────────────────────────────────────────────────────
+    // ── 8. Hero asset registry ────────────────────────────────────────────
+    // Stores pending hero-asset tile swaps; processed in the RAF loop so
+    // scene mutations happen on the render thread.
+    const pendingHeroSwaps: Array<{ tileIndex: number; coords: string }> = [];
+
+    // ── 9. Scene API ──────────────────────────────────────────────────────
+    const sceneApi: ThreeSceneApi = {
+      loadHeroAsset(coords, tileIndex = 0) {
+        if (__DEV__) {
+          console.log(
+            `[ThreeReelCanvas] loadHeroAsset coords="${coords}" tile=${tileIndex}`,
+          );
+        }
+        // Queue the swap to be processed on the next animation frame so we
+        // never mutate scene objects from outside the render loop.
+        pendingHeroSwaps.push({ tileIndex, coords });
+      },
+    };
+    // ── 10. RAF loop ──────────────────────────────────────────────────────
     let raf: number;
     let lastTime = performance.now();
     let transitionEndFired = false;
+    let prevXrayActive = false;
 
     function frame() {
       raf = requestAnimationFrame(frame);
@@ -329,6 +449,7 @@ export function ThreeReelCanvas({
       lastTime = now;
 
       const phase = spinPhaseRef.current;
+      const xray = xrayActiveRef.current;
 
       // ── Camera tween ──────────────────────────────────────────────────
       if (phase === 'spinning' && prevSpinPhase !== 'spinning') {
@@ -351,6 +472,49 @@ export function ThreeReelCanvas({
           if (!transitionEndFired) {
             transitionEndFired = true;
             onCameraTransitionEndRef.current?.();
+          }
+        }
+      }
+
+      // ── X-Ray clip plane ──────────────────────────────────────────────
+      if (xray !== prevXrayActive) {
+        if (xray) {
+          // Apply the clip plane to main tiles: clips everything below y=0,
+          // exposing the sub-layer beneath.
+          tileMaterial.clippingPlanes = [xrayClipPlane];
+          sublayerGroup.visible = true;
+        } else {
+          tileMaterial.clippingPlanes = [];
+          sublayerGroup.visible = false;
+        }
+        tileMaterial.needsUpdate = true;
+        prevXrayActive = xray;
+      }
+
+      // ── Hero asset swaps ──────────────────────────────────────────────
+      while (pendingHeroSwaps.length > 0) {
+        const swap = pendingHeroSwaps.shift()!;
+        const group = tileGroups[swap.tileIndex];
+        if (group) {
+          // Replace the main tile mesh material with a high-emissive
+          // "hero" placeholder that signals where a Luma/Splat asset would
+          // be loaded in the full implementation.
+          const heroMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffd700,           // gold tint as a visible placeholder
+            emissive: new THREE.Color(0x553300),
+            emissiveIntensity: 0.9,
+            metalness: 0.8,
+            roughness: 0.2,
+          });
+          // Replace the mesh material on the first child (the tile cube)
+          const tileMesh = group.children[0] as THREE.Mesh;
+          if (tileMesh?.isMesh) {
+            tileMesh.material = heroMaterial;
+          }
+          if (__DEV__) {
+            console.log(
+              `[ThreeReelCanvas] Hero asset placeholder applied to tile ${swap.tileIndex} (coords: ${swap.coords})`,
+            );
           }
         }
       }
@@ -393,7 +557,12 @@ export function ThreeReelCanvas({
 
     raf = requestAnimationFrame(frame);
 
-    // ── 9. Resize handling ────────────────────────────────────────────────
+    // Deliver the imperative API now that the scene and RAF loop are fully
+    // initialised — the first frame will already have run before any external
+    // caller can act on the API.
+    onSceneReadyRef.current?.(sceneApi);
+
+    // ── 11. Resize handling ───────────────────────────────────────────────
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver((entries) => {
@@ -410,7 +579,7 @@ export function ThreeReelCanvas({
       resizeObserver.observe(container);
     }
 
-    // ── 10. Cleanup ───────────────────────────────────────────────────────
+    // ── 12. Cleanup ───────────────────────────────────────────────────────
     return () => {
       cancelAnimationFrame(raf);
       resizeObserver?.disconnect();
@@ -423,6 +592,9 @@ export function ThreeReelCanvas({
       blurEffect.dispose();
       bloomEffect.dispose();
       aberrationEffect.dispose();
+      sublayerGeom.dispose();
+      sublayerMaterial.dispose();
+      voxelTexture.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }

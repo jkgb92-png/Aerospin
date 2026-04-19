@@ -141,8 +141,9 @@ export function useGoldenHourLight(
       const hemi = hemiLightRef.current;
       if (!scene || !dir || !hemi) return;
 
-      // Local solar hour: UTC hours + longitude offset (15° per hour)
-      const utcHours = (Date.now() / 3_600_000) % 24;
+      // Local solar hour: actual UTC hour of day + longitude offset (15° per hour)
+      const now = new Date();
+      const utcHours = now.getUTCHours() + now.getUTCMinutes() / 60;
       const localHour = ((utcHours + lon / 15) % 24 + 24) % 24;
 
       const preset = getPreset(localHour);

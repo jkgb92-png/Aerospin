@@ -120,8 +120,7 @@ const styles = StyleSheet.create({
     width: W,
     height: H,
     zIndex: TOKENS.zIndex.hud - 5, // above canvas (10), below HUD (20)
-    pointerEvents: 'none',
-  } as unknown as object, // cast required: StyleSheet doesn't know pointerEvents at root View level in all RN versions
+  },
   neonBorder: {
     position: 'absolute',
     top: 0,

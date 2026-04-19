@@ -13,6 +13,21 @@ import React from 'react';
 
 export type SpinPhase = 'idle' | 'spinning' | 'settling';
 
+/**
+ * Imperative API exposed by the Three.js canvas to parent components.
+ * Delivered via the `onSceneReady` callback once the WebGL context is live.
+ */
+export interface ThreeSceneApi {
+  /**
+   * Placeholder: prepares the scene to swap a specific terrain tile for a
+   * high-detail Luma/Splat hero asset.
+   *
+   * @param coords  GPS coordinate string identifying the real-world location.
+   * @param tileIndex  0-based index into the 5×3 tile grid (default: 0).
+   */
+  loadHeroAsset(coords: string, tileIndex?: number): void;
+}
+
 export interface ThreeReelCanvasProps {
   /** 5-reel × 3-row symbol index grid (0–8). */
   visibleSymbols?: number[][];
@@ -22,8 +37,16 @@ export interface ThreeReelCanvasProps {
   spinNumber?: number;
   /** GPS coordinate string, e.g. "51.5074°N  0.1278°W". */
   gpsCoord?: string;
+  /**
+   * When true, activates the X-Ray subsurface clip mode:
+   *  – the main tile cubes are cross-sectioned by the clipping plane
+   *  – the neon-green voxel sub-layer at y = -5 becomes visible
+   */
+  xrayActive?: boolean;
   /** Called once the satellite → isometric camera tween completes. */
   onCameraTransitionEnd?: () => void;
+  /** Called once the WebGL scene is initialised, providing the imperative API. */
+  onSceneReady?: (api: ThreeSceneApi) => void;
 }
 
 /**

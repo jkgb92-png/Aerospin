@@ -5,7 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { EarthBackdrop } from './ui/EarthBackdrop';
 import { IndustrialCasinoDashboard } from './ui/IndustrialCasinoDashboard';
 import { FloatingHUD, SpinRecord } from './ui/FloatingHUD';
-import { ThreeReelCanvas, SpinPhase } from './ui/ThreeReelCanvas';
+import { ThreeReelCanvas, ThreeSceneApi, SpinPhase } from './ui/ThreeReelCanvas';
 import { WinFlashOverlay } from './ui/WinFlashOverlay';
 import {
   loadSounds,
@@ -106,6 +106,8 @@ export default function App() {
   const [spinPhase, setSpinPhase] = useState<SpinPhase>('idle');
   const [spinNumber, setSpinNumber] = useState(0);
   const [isWin, setIsWin] = useState(false);
+  const [xrayActive, setXrayActive] = useState(false);
+  const sceneApiRef = useRef<ThreeSceneApi | null>(null);
   const soundsReady = useRef(false);
 
   // Load sounds once on mount; unload on unmount.
@@ -127,9 +129,14 @@ export default function App() {
     };
   }, []);
 
+  const handleSceneReady = useCallback((api: ThreeSceneApi) => {
+    sceneApiRef.current = api;
+  }, []);
+
   const handleSpin = useCallback(() => {
     // Advance spin counter and trigger the Three.js camera + voxel transition
-    setSpinNumber((n) => n + 1);
+    const nextSpin = spinNumber + 1;
+    setSpinNumber(nextSpin);
     setSpinPhase('spinning');
     setIsWin(false);
 
@@ -142,7 +149,6 @@ export default function App() {
           setSpinPhase('settling');
           playReelSettleSequence(5);
           // Determine a mock win on every 4th spin for demo
-          const nextSpin = spinNumber + 1;
           if (nextSpin % 4 === 0) {
             setIsWin(true);
             playSound(SoundEvent.WIN).catch(() => {});
@@ -170,6 +176,8 @@ export default function App() {
               spinPhase={spinPhase}
               spinNumber={spinNumber}
               gpsCoord={GPS_COORD}
+              xrayActive={xrayActive}
+              onSceneReady={handleSceneReady}
             />
           </ErrorBoundary>
         )}

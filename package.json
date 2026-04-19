@@ -25,6 +25,7 @@
   },
   "devDependencies": {
     "@babel/core": "^7.24.0",
+    "@babel/plugin-transform-class-static-block": "^7.28.6",
     "@types/react": "~18.3.12",
     "@types/three": "^0.184.0",
     "typescript": "~5.3.3"
