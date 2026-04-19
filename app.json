@@ -12,9 +12,7 @@
       "bundler": "metro",
       "output": "single"
     },
-    "experiments": {
-      "baseUrl": "/Aerospin"
-    },
+    "experiments": {},
     "plugins": [
       [
         "expo-location",
