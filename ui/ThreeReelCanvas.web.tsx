@@ -56,14 +56,16 @@ const SUBLAYER_Y = -5;
 
 /**
  * THREE.Plane constant when X-Ray is OFF.
- * Visible region: y ≥ -10 → all tiles (y ≈ -1.5 … +1.5) are fully visible.
+ * Normal is (0, -1, 0): visible region is -y + constant >= 0 → y <= constant.
+ * With constant = 10 every tile (y ≈ -1.5 … +1.5) satisfies y <= 10 → nothing clipped.
  */
 const XRAY_PLANE_OFF = 10;
 
 /**
  * THREE.Plane constant when X-Ray is fully ON.
- * Visible region: y ≥ 5 → all tiles are clipped away; the sub-layer at
- * y = -5 is unaffected (its material has no clipping plane set).
+ * Visible region: y <= -5 → all tiles (y ≈ -1.5 … +1.5) are clipped away.
+ * The sub-layer at y = -5 is unaffected (its material has no clipping plane).
+ * The sweep therefore eats tiles from the TOP DOWN as constant falls 10 → -5.
  */
 const XRAY_PLANE_ON = SUBLAYER_Y; // -5
 
@@ -307,11 +309,17 @@ export function ThreeReelCanvas({
     }
 
     // ── 4a. X-Ray subsurface clipping plane ───────────────────────────────
-    // THREE.Plane(normal, constant): visible region is where
-    //   normal · point + constant ≥ 0   →   y ≥ −constant
-    // Starting constant = XRAY_PLANE_OFF (10) keeps the clip above all geometry
-    // so tiles render fully until the scan animation begins.
-    const xrayClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), XRAY_PLANE_OFF);
+    // THREE.Plane(normal, constant): visible (unclipped) region satisfies
+    //   normal · point + constant >= 0
+    // We choose normal = (0, -1, 0) (pointing downward) so the condition becomes:
+    //   -y + constant >= 0  →  y <= constant
+    // This means "everything ABOVE the boundary y=constant is clipped away."
+    // As constant sweeps from XRAY_PLANE_OFF (10) down to XRAY_PLANE_ON (-5)
+    // the clip boundary descends through the tile grid, removing tiles from the
+    // TOP of the scene downward — the desired top-down wipe effect.
+    // (A normal of (0, +1, 0) would produce the opposite: clipping from the bottom
+    //  upward, which would look like the ground is rising rather than being scanned.)
+    const xrayClipPlane = new THREE.Plane(new THREE.Vector3(0, -1, 0), XRAY_PLANE_OFF);
 
     // ── 4b. Main-tile terrain ─────────────────────────────────────────────
     const tileGeom = new THREE.BoxGeometry(TILE_W, TILE_H, TILE_D);
@@ -400,6 +408,26 @@ export function ThreeReelCanvas({
     }
     scene.add(sublayerGroup);
 
+    // ── 4d. Scanner line ──────────────────────────────────────────────────
+    // A thin neon strip that tracks xrayClipPlane.constant every frame,
+    // masking the hard clip edge so the wipe reads as a physical laser cut
+    // rather than a sudden geometry disappearance.
+    // Dimensions: full grid width + margin × very thin × tile-depth + margin.
+    const scannerGeom = new THREE.BoxGeometry(
+      COLS * SPACING_X + 0.5,  // x: span all 5 columns with margin
+      0.04,                     // y: razor-thin so it reads as a line
+      TILE_D + 0.15,            // z: slightly deeper than tile faces
+    );
+    const scannerMaterial = new THREE.MeshBasicMaterial({
+      color: 0xaaffdd,   // bright neon cyan-green — complements the voxel #00FF88
+      transparent: true,
+      opacity: 0.9,
+    });
+    const scannerLine = new THREE.Mesh(scannerGeom, scannerMaterial);
+    scannerLine.renderOrder = 2; // render on top of tile overlays
+    scannerLine.visible = false; // shown only while a sweep is in progress
+    scene.add(scannerLine);
+
     // ── 5. Post-processing (SelectiveBloom) ───────────────────────────────
     // SelectiveBloomEffect restricts the bloom glow to a specific set of
     // scene objects.  By adding only the holographic wireframe overlay meshes
@@ -420,6 +448,8 @@ export function ThreeReelCanvas({
     // Selection is a Set<Object3D>; SelectiveBloomEffect renders bloom only
     // on geometry that belongs to this set.
     wireOverlays.forEach((m) => bloomEffect.selection.add(m));
+    // The scanner line should also bloom so it reads as a neon laser edge.
+    bloomEffect.selection.add(scannerLine);
 
     const aberrationEffect = new ChromaticAberrationEffect({
       offset: new THREE.Vector2(0, 0),
@@ -516,20 +546,23 @@ export function ThreeReelCanvas({
       }
 
       // ── X-Ray sweep animation ─────────────────────────────────────────
-      // Determine the target constant from the current desired state.
+      // Normal = (0, -1, 0): visible when y <= constant.
+      // Sweeping constant 10 → -5 clips tiles from the top of the scene downward.
       const xray = xrayActiveRef.current;
       const xrayPlaneTarget = xray ? XRAY_PLANE_ON : XRAY_PLANE_OFF;
 
       if (xray !== prevXrayActive) {
         if (xray) {
-          // Scan starting: arm clipping plane and show sub-layer immediately.
-          // The plane starts at XRAY_PLANE_OFF so nothing is clipped yet;
-          // the animated constant does the actual wipe frame-by-frame.
+          // Scan starting: arm clipping planes on tile material.
+          // tileMaterial.needsUpdate = true is REQUIRED here — Three.js recompiles
+          // the material shader when the number of active clipping planes changes
+          // (going from 0 → 1).  Without it the clip may not activate immediately.
           if (!tileMaterial.clippingPlanes || tileMaterial.clippingPlanes.length === 0) {
             tileMaterial.clippingPlanes = [xrayClipPlane];
             tileMaterial.needsUpdate = true;
           }
           sublayerGroup.visible = true;
+          scannerLine.visible = true;
         }
         prevXrayActive = xray;
       }
@@ -544,9 +577,13 @@ export function ThreeReelCanvas({
 
         // Write the new constant into the THREE.Plane instance.
         // Because tileMaterial.clippingPlanes already holds a reference to
-        // xrayClipPlane, mutating .constant is all that's needed — no
+        // xrayClipPlane, mutating .constant is all that is needed — no
         // material rebuild required.
         xrayClipPlane.constant = xrayPlaneConstant;
+
+        // Position the scanner line exactly at the clip boundary.
+        // With normal (0,-1,0) the clip boundary is at y = constant.
+        scannerLine.position.y = xrayPlaneConstant;
 
         // Derive a 0→1 progress scalar: 0 = fully off, 1 = fully revealed.
         const t = (XRAY_PLANE_OFF - xrayPlaneConstant) / (XRAY_PLANE_OFF - XRAY_PLANE_ON);
@@ -555,11 +592,14 @@ export function ThreeReelCanvas({
 
         // Once the retract animation finishes, clean up the clip state so
         // the renderer doesn't evaluate an unused clipping plane every frame.
+        // tileMaterial.needsUpdate = true is REQUIRED here too — the shader
+        // must be re-evaluated when clipping planes count drops back to 0.
         if (xrayPlaneConstant === XRAY_PLANE_OFF) {
           tileMaterial.clippingPlanes = [];
           tileMaterial.needsUpdate = true;
           sublayerGroup.visible = false;
           sublayerMaterial.emissiveIntensity = 0;
+          scannerLine.visible = false;
         }
       }
 
@@ -667,6 +707,9 @@ export function ThreeReelCanvas({
       sublayerGeom.dispose();
       sublayerMaterial.dispose();
       voxelTexture.dispose();
+      scene.remove(scannerLine);
+      scannerGeom.dispose();
+      scannerMaterial.dispose();
       if (container.contains(renderer.domElement)) {
         container.removeChild(renderer.domElement);
       }
