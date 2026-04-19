@@ -14,7 +14,7 @@
  *  • Selective bloom targeting the holographic scanline colour only
  *  • Velocity-based motion blur (custom Effect, decays exponentially)
  *  • Chromatic aberration scaled by spin velocity
- *  • X-Ray subsurface clip plane (THREE.Plane, localClippingEnabled)
+ *  • X-Ray subsurface scan: animated clip-plane wipe from y=10→-5 (triggerXray)
  *  • Voxel sub-layer grid at y = -5 (neon-green DataTexture, xray-only)
  *  • loadHeroAsset() placeholder for high-detail tile swaps
  */
@@ -49,6 +49,32 @@ const SPACING_Y = 1.0;
 
 /** Y position of the voxel sub-layer grid. */
 const SUBLAYER_Y = -5;
+
+// ---------------------------------------------------------------------------
+// X-Ray sweep animation constants
+// ---------------------------------------------------------------------------
+
+/**
+ * THREE.Plane constant when X-Ray is OFF.
+ * Visible region: y ≥ -10 → all tiles (y ≈ -1.5 … +1.5) are fully visible.
+ */
+const XRAY_PLANE_OFF = 10;
+
+/**
+ * THREE.Plane constant when X-Ray is fully ON.
+ * Visible region: y ≥ 5 → all tiles are clipped away; the sub-layer at
+ * y = -5 is unaffected (its material has no clipping plane set).
+ */
+const XRAY_PLANE_ON = SUBLAYER_Y; // -5
+
+/** Peak emissiveIntensity of the voxel sub-layer at full reveal. */
+const SUBLAYER_EMISSIVE_MAX = 0.45;
+
+/**
+ * Units-per-second the clip-plane constant moves.
+ * Range = 15 units; 1.5 s sweep → 10 u/s.
+ */
+const XRAY_SWEEP_SPEED = (XRAY_PLANE_OFF - XRAY_PLANE_ON) / 1.5;
 
 // ---------------------------------------------------------------------------
 // Camera positions
@@ -281,11 +307,11 @@ export function ThreeReelCanvas({
     }
 
     // ── 4a. X-Ray subsurface clipping plane ───────────────────────────────
-    // The plane equation is: normal · point + constant ≥ 0 → visible.
-    // Normal (0, 1, 0) + constant = 0 → visible region: y ≥ 0.
-    // When xray is active this clips the lower halves of all main tiles,
-    // revealing the sub-layer grid sitting at y = SUBLAYER_Y below them.
-    const xrayClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    // THREE.Plane(normal, constant): visible region is where
+    //   normal · point + constant ≥ 0   →   y ≥ −constant
+    // Starting constant = XRAY_PLANE_OFF (10) keeps the clip above all geometry
+    // so tiles render fully until the scan animation begins.
+    const xrayClipPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), XRAY_PLANE_OFF);
 
     // ── 4b. Main-tile terrain ─────────────────────────────────────────────
     const tileGeom = new THREE.BoxGeometry(TILE_W, TILE_H, TILE_D);
@@ -352,14 +378,14 @@ export function ThreeReelCanvas({
     const sublayerMaterial = new THREE.MeshStandardMaterial({
       map: voxelTexture,
       emissive: new THREE.Color(0x00ff88),
-      emissiveIntensity: 0.45,
+      emissiveIntensity: 0, // ramped up by the scan animation (0 → SUBLAYER_EMISSIVE_MAX)
       metalness: 0.1,
       roughness: 0.5,
     });
 
     const sublayerGroup = new THREE.Group();
     sublayerGroup.position.y = SUBLAYER_Y;
-    sublayerGroup.visible = false; // only shown when xrayActive
+    sublayerGroup.visible = false; // made visible at scan start; clip plane gates actual reveal
 
     for (let col = 0; col < COLS; col++) {
       for (let row = 0; row < ROWS; row++) {
@@ -417,13 +443,27 @@ export function ThreeReelCanvas({
     // ── 7. Velocity / blur state ──────────────────────────────────────────
     let spinVelocity = 0;
 
-    // ── 8. Hero asset registry ────────────────────────────────────────────
+    // ── 8. X-Ray sweep animation state ────────────────────────────────────
+    // We animate the clip-plane's `constant` field rather than toggling the
+    // clipping planes array, so no material rebuild happens during the wipe.
+    let xrayPlaneConstant = XRAY_PLANE_OFF; // tracks the live value written to xrayClipPlane
+
+    // ── 9. Hero asset registry ────────────────────────────────────────────
     // Stores pending hero-asset tile swaps; processed in the RAF loop so
     // scene mutations happen on the render thread.
     const pendingHeroSwaps: Array<{ tileIndex: number; coords: string }> = [];
 
-    // ── 9. Scene API ──────────────────────────────────────────────────────
+    // ── 10. Scene API ─────────────────────────────────────────────────────
     const sceneApi: ThreeSceneApi = {
+      /**
+       * Trigger the X-Ray scan wipe.  Setting active=true animates the clip
+       * plane from XRAY_PLANE_OFF (10) down to XRAY_PLANE_ON (-5), gradually
+       * uncovering the neon voxel sub-layer.  active=false reverses the sweep.
+       * Calling this is equivalent to flipping the `xrayActive` prop.
+       */
+      triggerXray(active: boolean) {
+        xrayActiveRef.current = active;
+      },
       loadHeroAsset(coords, tileIndex = 0) {
         if (__DEV__) {
           console.log(
@@ -449,7 +489,6 @@ export function ThreeReelCanvas({
       lastTime = now;
 
       const phase = spinPhaseRef.current;
-      const xray = xrayActiveRef.current;
 
       // ── Camera tween ──────────────────────────────────────────────────
       if (phase === 'spinning' && prevSpinPhase !== 'spinning') {
@@ -476,19 +515,52 @@ export function ThreeReelCanvas({
         }
       }
 
-      // ── X-Ray clip plane ──────────────────────────────────────────────
+      // ── X-Ray sweep animation ─────────────────────────────────────────
+      // Determine the target constant from the current desired state.
+      const xray = xrayActiveRef.current;
+      const xrayPlaneTarget = xray ? XRAY_PLANE_ON : XRAY_PLANE_OFF;
+
       if (xray !== prevXrayActive) {
         if (xray) {
-          // Apply the clip plane to main tiles: clips everything below y=0,
-          // exposing the sub-layer beneath.
-          tileMaterial.clippingPlanes = [xrayClipPlane];
+          // Scan starting: arm clipping plane and show sub-layer immediately.
+          // The plane starts at XRAY_PLANE_OFF so nothing is clipped yet;
+          // the animated constant does the actual wipe frame-by-frame.
+          if (!tileMaterial.clippingPlanes || tileMaterial.clippingPlanes.length === 0) {
+            tileMaterial.clippingPlanes = [xrayClipPlane];
+            tileMaterial.needsUpdate = true;
+          }
           sublayerGroup.visible = true;
-        } else {
-          tileMaterial.clippingPlanes = [];
-          sublayerGroup.visible = false;
         }
-        tileMaterial.needsUpdate = true;
         prevXrayActive = xray;
+      }
+
+      // Move the plane constant toward its target at XRAY_SWEEP_SPEED u/s.
+      if (xrayPlaneConstant !== xrayPlaneTarget) {
+        const dir = xrayPlaneTarget < xrayPlaneConstant ? -1 : 1;
+        xrayPlaneConstant += dir * XRAY_SWEEP_SPEED * dt;
+        // Clamp to target so we never overshoot.
+        if (dir < 0) xrayPlaneConstant = Math.max(xrayPlaneConstant, xrayPlaneTarget);
+        if (dir > 0) xrayPlaneConstant = Math.min(xrayPlaneConstant, xrayPlaneTarget);
+
+        // Write the new constant into the THREE.Plane instance.
+        // Because tileMaterial.clippingPlanes already holds a reference to
+        // xrayClipPlane, mutating .constant is all that's needed — no
+        // material rebuild required.
+        xrayClipPlane.constant = xrayPlaneConstant;
+
+        // Derive a 0→1 progress scalar: 0 = fully off, 1 = fully revealed.
+        const t = (XRAY_PLANE_OFF - xrayPlaneConstant) / (XRAY_PLANE_OFF - XRAY_PLANE_ON);
+        // Ramp sub-layer emissive intensity to pulse in sync with the scan.
+        sublayerMaterial.emissiveIntensity = t * SUBLAYER_EMISSIVE_MAX;
+
+        // Once the retract animation finishes, clean up the clip state so
+        // the renderer doesn't evaluate an unused clipping plane every frame.
+        if (xrayPlaneConstant === XRAY_PLANE_OFF) {
+          tileMaterial.clippingPlanes = [];
+          tileMaterial.needsUpdate = true;
+          sublayerGroup.visible = false;
+          sublayerMaterial.emissiveIntensity = 0;
+        }
       }
 
       // ── Hero asset swaps ──────────────────────────────────────────────

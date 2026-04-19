@@ -19,6 +19,14 @@ export type SpinPhase = 'idle' | 'spinning' | 'settling';
  */
 export interface ThreeSceneApi {
   /**
+   * Animate the X-Ray subsurface scan wipe.
+   *
+   * active=true  → clip-plane sweeps from y=10 down to y=−5, gradually
+   *                 revealing the neon voxel sub-layer beneath the tiles.
+   * active=false → clip-plane retracts back to y=10, hiding the sub-layer.
+   */
+  triggerXray(active: boolean): void;
+  /**
    * Placeholder: prepares the scene to swap a specific terrain tile for a
    * high-detail Luma/Splat hero asset.
    *
