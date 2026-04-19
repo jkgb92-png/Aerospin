@@ -30,7 +30,7 @@ jobs:
         run: npm ci
 
       - name: Build Expo web (static)
-        run: npx expo export -p web
+        run: npx expo export -p web --base-url /Aerospin
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
