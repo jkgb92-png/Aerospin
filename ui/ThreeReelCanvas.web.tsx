@@ -54,9 +54,11 @@ const tilesUrl: string = GOOGLE_TILES_API_KEY
   ? `https://tile.googleapis.com/v1/3dtiles/root.json?key=${GOOGLE_TILES_API_KEY}`
   : '';
 
-// Always log on mount so developers can verify the URL is well-formed (or see
+// Log on mount in dev so developers can verify the URL is well-formed (or see
 // that it is intentionally empty when no key has been supplied).
-console.log('Tiles Root URL:', tilesUrl || '(no key – using built-in BoxGeometry terrain)');
+if (__DEV__) {
+  console.log('Tiles Root URL:', tilesUrl || '(no key – using built-in BoxGeometry terrain)');
+}
 
 // ---------------------------------------------------------------------------
 // Layout constants
