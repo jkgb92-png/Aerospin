@@ -57,23 +57,23 @@ export function WinFlashOverlay({ isWin }: WinFlashOverlayProps) {
     // ── Screen-shake sequence ─────────────────────────────────────────────
     const shakeSeqX = Animated.sequence(
       SHAKE_FRAMES.map(([x]) =>
-        Animated.timing(shakeX, { toValue: x, duration: FRAME_MS, useNativeDriver: true }),
+        Animated.timing(shakeX, { toValue: x, duration: FRAME_MS, useNativeDriver: false }),
       ),
     );
     const shakeSeqY = Animated.sequence(
       SHAKE_FRAMES.map(([, y]) =>
-        Animated.timing(shakeY, { toValue: y, duration: FRAME_MS, useNativeDriver: true }),
+        Animated.timing(shakeY, { toValue: y, duration: FRAME_MS, useNativeDriver: false }),
       ),
     );
 
     // ── Neon border pulse (3 × fade-in/out) ──────────────────────────────
     const pulse = Animated.sequence([
-      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: true }),
-      Animated.timing(borderOpacity, { toValue: 0.2, duration: 80, useNativeDriver: true }),
-      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: true }),
-      Animated.timing(borderOpacity, { toValue: 0.2, duration: 80, useNativeDriver: true }),
-      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: true }),
-      Animated.timing(borderOpacity, { toValue: 0, duration: 300, useNativeDriver: true }),
+      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: false }),
+      Animated.timing(borderOpacity, { toValue: 0.2, duration: 80, useNativeDriver: false }),
+      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: false }),
+      Animated.timing(borderOpacity, { toValue: 0.2, duration: 80, useNativeDriver: false }),
+      Animated.timing(borderOpacity, { toValue: 1, duration: 80, useNativeDriver: false }),
+      Animated.timing(borderOpacity, { toValue: 0, duration: 300, useNativeDriver: false }),
     ]);
 
     Animated.parallel([shakeSeqX, shakeSeqY, pulse]).start(() => {

@@ -140,7 +140,7 @@ function SatelliteHUDTile({ topLeftCoord, bottomRightCoord }: SatelliteHUDTilePr
         toValue: 1,
         duration: SWEEP_PERIOD_MS,
         easing: Easing.linear,
-        useNativeDriver: true,
+        useNativeDriver: false,
       }),
     ).start();
   }, [sweepAngle]);
