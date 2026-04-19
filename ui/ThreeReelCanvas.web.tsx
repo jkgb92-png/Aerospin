@@ -174,10 +174,14 @@ export function ThreeReelCanvas({
   const sceneRef = useRef<THREE.Scene | null>(null);
   const spinPhaseRef = useRef(spinPhase);
   const spinNumberRef = useRef(spinNumber);
+  // Stable ref for the callback so the RAF loop always calls the latest version
+  // without requiring the outer useEffect to re-run when the prop identity changes.
+  const onCameraTransitionEndRef = useRef(onCameraTransitionEnd);
 
   // Keep refs in sync with latest props (accessed inside RAF loop)
   useEffect(() => { spinPhaseRef.current = spinPhase; }, [spinPhase]);
   useEffect(() => { spinNumberRef.current = spinNumber; }, [spinNumber]);
+  useEffect(() => { onCameraTransitionEndRef.current = onCameraTransitionEnd; }, [onCameraTransitionEnd]);
 
   // Longitude for golden-hour light
   const lon = parseLon(gpsCoord);
@@ -346,7 +350,7 @@ export function ThreeReelCanvas({
           camTweenActive = false;
           if (!transitionEndFired) {
             transitionEndFired = true;
-            onCameraTransitionEnd?.();
+            onCameraTransitionEndRef.current?.();
           }
         }
       }

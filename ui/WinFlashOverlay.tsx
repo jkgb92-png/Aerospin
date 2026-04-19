@@ -13,7 +13,7 @@
  */
 
 import React, { useEffect, useRef } from 'react';
-import { Animated, Dimensions, StyleSheet, View } from 'react-native';
+import { Animated, Dimensions, StyleSheet } from 'react-native';
 import { TOKENS } from './designTokens';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -134,6 +134,4 @@ const styles = StyleSheet.create({
   },
 });
 
-// Unused but kept to satisfy the View placeholder for the overlay background
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const _unused = View;
+
