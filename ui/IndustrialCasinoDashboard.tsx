@@ -78,8 +78,30 @@ const C = {
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 const TILE_W = SCREEN_W * 0.60;
-const TILE_H = SCREEN_H * 0.38;
 const SIDEBAR_W = SCREEN_W - TILE_W - 16; // 8 px gap each side
+
+// Reserve vertical space for: paddingTop(12) + statusBar(~55) + mainRow
+// marginBottom(8) + 3-row reels(156) + reels marginBottom(8) +
+// SPIN button(~54) + FloatingHUD overlay(~260). Cap at 40% of screen so the
+// satellite map doesn't become too tall on large displays.
+const STATUS_BAR_HEIGHT   = 55; // content + paddingBottom + marginBottom
+const REELS_HEIGHT        = 3 * 52 + 8; // 3 rows × 52 px + marginBottom
+const SPIN_BUTTON_HEIGHT  = 54; // marginTop + paddingVertical + text + marginBottom
+const HUD_OVERLAY_HEIGHT  = 260; // FloatingHUD + bottom offset clearance
+const PADDING_TOP         = 12;
+const MAIN_ROW_MARGIN     = 8;  // mainRow marginBottom
+const FIXED_LAYOUT_HEIGHT =
+  PADDING_TOP + STATUS_BAR_HEIGHT + MAIN_ROW_MARGIN +
+  REELS_HEIGHT + SPIN_BUTTON_HEIGHT + HUD_OVERLAY_HEIGHT;
+
+const TILE_H = Math.max(
+  120,
+  Math.min(SCREEN_H * 0.40, SCREEN_H - FIXED_LAYOUT_HEIGHT),
+);
+
+// Wireframe canvas side length: fit inside the sidebar without overflowing
+// the tile height. Capped at sidebar width minus padding.
+const WIRE_SIZE = Math.min(SIDEBAR_W - 24, Math.max(80, TILE_H - 50));
 
 // ---------------------------------------------------------------------------
 // Radar sweep animation
@@ -94,8 +116,6 @@ const SWEEP_PERIOD_MS = 3200;
 
 /** Number of terrain grid divisions per axis. */
 const GRID_DIV = 5;
-/** Displayed width/height of the AeroPane wireframe canvas. */
-const WIRE_SIZE = SIDEBAR_W - 24;
 
 // ---------------------------------------------------------------------------
 // Industrial world symbol glyphs (emoji proxies; replace with sprites in prod)
@@ -701,6 +721,7 @@ const styles = StyleSheet.create({
     borderColor: C.SLATE,
     padding: 8,
     alignItems: 'center',
+    overflow: 'hidden',
   },
   sidebarTitle: {
     color: C.DIM_TEXT,
