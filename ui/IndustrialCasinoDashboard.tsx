@@ -534,12 +534,15 @@ function StatusChip({
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
-  // Root – transparent so EarthBackdrop satellite imagery shows through
+  // Root – transparent so EarthBackdrop satellite imagery shows through.
+  // zIndex must exceed ThreeReelCanvas (zIndex 5) so the dashboard renders
+  // on top of the canvas layer while remaining below the FloatingHUD (zIndex 20).
   root: {
     flex: 1,
     backgroundColor: 'transparent',
     paddingTop: 12,
     paddingHorizontal: 8,
+    zIndex: TOKENS.zIndex.dashboard,
   },
 
   // Status bar – semi-transparent tint so text stays readable over the backdrop

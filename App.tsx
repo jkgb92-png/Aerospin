@@ -110,6 +110,22 @@ export default function App() {
   const sceneApiRef = useRef<ThreeSceneApi | null>(null);
   const soundsReady = useRef(false);
 
+  // On web: prevent the page from scrolling so the full-screen canvas and
+  // absolutely-positioned UI layers don't overflow the visible viewport.
+  // react-native-web renders into a div that can grow beyond 100 vh when
+  // flex children have non-zero intrinsic heights, making the page
+  // scrollable and revealing a "ghost" duplicate of the canvas below the fold.
+  useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      const { documentElement: html, body } = document;
+      html.style.height = '100%';
+      html.style.overflow = 'hidden';
+      body.style.height = '100%';
+      body.style.overflow = 'hidden';
+      body.style.margin = '0';
+    }
+  }, []);
+
   // Load sounds once on mount; unload on unmount.
   // On web, loadSounds() itself is safe before any user gesture – only
   // playback (triggered by the SPIN button) requires a prior gesture.
@@ -211,6 +227,6 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: TOKENS.color.charcoal,
-    zIndex: TOKENS.zIndex.dashboard,
+    overflow: 'hidden',
   },
 });
