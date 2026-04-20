@@ -45,17 +45,21 @@
  *  DIM_TEXT  #6B7A85   secondary labels
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState, useMemo } from 'react';
 import {
   Animated,
   Dimensions,
   Easing,
+  Image,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
 import { TOKENS } from './designTokens';
+import { spinReel } from './ReelPhysics';
+import type { SpinPhase } from './ThreeReelCanvas';
 
 // ---------------------------------------------------------------------------
 // Palette constants
@@ -118,6 +122,74 @@ const SWEEP_PERIOD_MS = 3200;
 const GRID_DIV = 5;
 
 // ---------------------------------------------------------------------------
+// Satellite tile utilities (Esri World Imagery + GPS → Slippy-map tile math)
+// ---------------------------------------------------------------------------
+
+/** Esri World Imagery tile URL (free, no API key). */
+const ESRI_TILE_URL = (z: number, x: number, y: number): string =>
+  `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`;
+
+/** Zoom level for the HUD mini-map (zoom 16 ≈ 1.5 m/px → fine street detail). */
+const HUD_ZOOM = 16;
+
+function lon2tile(lon: number, zoom: number): number {
+  return Math.floor(((lon + 180) / 360) * Math.pow(2, zoom));
+}
+
+function lat2tile(lat: number, zoom: number): number {
+  const rad = (lat * Math.PI) / 180;
+  return Math.floor(
+    ((1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2) *
+      Math.pow(2, zoom),
+  );
+}
+
+/**
+ * Parse a GPS coordinate string such as "51.5074°N  0.1278°W" or
+ * "33.8688°S  151.2093°E" and return decimal lat/lon.
+ * Returns null if the string does not match the expected format.
+ */
+function parseGpsCoord(s: string): { lat: number; lon: number } | null {
+  const m = s.match(/(\d+\.?\d*)°([NS])\s+(\d+\.?\d*)°([EW])/i);
+  if (!m) return null;
+  const lat = parseFloat(m[1]) * (m[2].toUpperCase() === 'S' ? -1 : 1);
+  const lon = parseFloat(m[3]) * (m[4].toUpperCase() === 'W' ? -1 : 1);
+  return { lat, lon };
+}
+
+// ---------------------------------------------------------------------------
+// Reel animation constants (used by AnimatedReelColumn)
+// ---------------------------------------------------------------------------
+
+/** Random symbols rendered before the final result symbols during spin. */
+const REEL_PREFIX = 8;
+/**
+ * Extra symbols appended after the 3 result symbols to give the spring
+ * overshoot in spinReel room to travel without exposing empty space.
+ *
+ * Overshoot estimate (worst case starting 2 symbols from stop):
+ *   DECEL_SPRING (tension=80, friction=12): ζ ≈ 0.67, ω_d ≈ 6.63 rad/s.
+ *   Starting displacement: 2 × REEL_SYMBOL_H = 104 px, v₀ = 1296 px/s.
+ *   Amplitude ≈ 145 px; first zero-crossing damping ≈ 0.12 → ~17 px overshoot.
+ *   1 suffix symbol (52 px) comfortably covers the ~17 px maximum overshoot.
+ */
+const REEL_SUFFIX = 1;
+/** Height of one symbol cell (must match styles.symbolCell.height). */
+const REEL_SYMBOL_H = 52;
+/** Total visible rows per reel (3 rows always visible). */
+const REEL_VISIBLE_ROWS = 3;
+/** translateY that shows the first result symbol at the top of the viewport. */
+const REEL_STOP_Y = -(REEL_PREFIX * REEL_SYMBOL_H);
+/**
+ * Point 2 symbols before the stop where the fast-timing phase ends and
+ * spinReel takes over for the physics-based settle.  Starting spinReel from
+ * this close distance keeps the spring overshoot within REEL_SUFFIX symbols.
+ */
+const REEL_RUSH_TARGET = REEL_STOP_Y + 2 * REEL_SYMBOL_H;
+/** Whether the native driver can be used for reel scroll animations. */
+const REEL_USE_NATIVE_DRIVER = Platform.OS !== 'web';
+
+// ---------------------------------------------------------------------------
 // Industrial world symbol glyphs (emoji proxies; replace with sprites in prod)
 // ---------------------------------------------------------------------------
 
@@ -145,12 +217,24 @@ interface SatelliteHUDTileProps {
 }
 
 /**
- * Top-down dockyard satellite tile with tactical HUD overlay.
- * The "satellite image" is synthesised from charcoal/olive rectangles so the
- * app carries no external assets.  Swap the dock geometry Views for a real
- * MapView / Image in production.
+ * Top-down satellite HUD tile.
+ *
+ * When `topLeftCoord` is parseable the component renders a real Esri World
+ * Imagery tile as the map background, then layers the tactical HUD overlay
+ * (crosshair, radar sweep, corner labels, resolution watermark) on top.
+ * Falls back to the synthesised charcoal/olive dock geometry when the coord
+ * cannot be parsed (e.g. placeholder text before GPS resolves).
  */
 function SatelliteHUDTile({ topLeftCoord, bottomRightCoord }: SatelliteHUDTileProps) {
+  // Derive satellite tile URI from the passed GPS coordinate.
+  const tileUri = useMemo<string | null>(() => {
+    const parsed = parseGpsCoord(topLeftCoord);
+    if (!parsed) return null;
+    const tx = lon2tile(parsed.lon, HUD_ZOOM);
+    const ty = lat2tile(parsed.lat, HUD_ZOOM);
+    return ESRI_TILE_URL(HUD_ZOOM, tx, ty);
+  }, [topLeftCoord]);
+
   // Sweep angle 0 → 2π
   const sweepAngle = useRef(new Animated.Value(0)).current;
 
@@ -173,23 +257,38 @@ function SatelliteHUDTile({ topLeftCoord, bottomRightCoord }: SatelliteHUDTilePr
   return (
     <View style={styles.tile}>
 
-      {/* ── Synthesised dockyard geometry ── */}
-      {/* Pier 1 */}
-      <View style={[styles.dockBlock, { top: '15%', left: '5%', width: '30%', height: '10%' }]} />
-      {/* Pier 2 */}
-      <View style={[styles.dockBlock, { top: '28%', left: '5%', width: '45%', height: '10%' }]} />
-      {/* Storage yard */}
-      <View style={[styles.dockBlock, { top: '55%', left: '10%', width: '55%', height: '18%' }]} />
-      {/* Vessel berth outline */}
-      <View style={[styles.dockOutline, { top: '10%', left: '55%', width: '35%', height: '25%' }]} />
-      {/* Road grid lines (horizontal) */}
-      <View style={[styles.gridLineH, { top: '45%' }]} />
-      <View style={[styles.gridLineH, { top: '75%' }]} />
-      {/* Road grid lines (vertical) */}
-      <View style={[styles.gridLineV, { left: '50%' }]} />
-      <View style={[styles.gridLineV, { left: '70%' }]} />
+      {tileUri ? (
+        /* ── Real satellite imagery ── */
+        <>
+          <Image
+            source={{ uri: tileUri }}
+            style={StyleSheet.absoluteFillObject}
+            resizeMode="cover"
+          />
+          {/* Tactical dark-green tint so HUD elements stay legible */}
+          <View style={styles.tileDimOverlay} />
+        </>
+      ) : (
+        /* ── Synthesised dockyard geometry (fallback when GPS unavailable) ── */
+        <>
+          {/* Pier 1 */}
+          <View style={[styles.dockBlock, { top: '15%', left: '5%', width: '30%', height: '10%' }]} />
+          {/* Pier 2 */}
+          <View style={[styles.dockBlock, { top: '28%', left: '5%', width: '45%', height: '10%' }]} />
+          {/* Storage yard */}
+          <View style={[styles.dockBlock, { top: '55%', left: '10%', width: '55%', height: '18%' }]} />
+          {/* Vessel berth outline */}
+          <View style={[styles.dockOutline, { top: '10%', left: '55%', width: '35%', height: '25%' }]} />
+          {/* Road grid lines (horizontal) */}
+          <View style={[styles.gridLineH, { top: '45%' }]} />
+          <View style={[styles.gridLineH, { top: '75%' }]} />
+          {/* Road grid lines (vertical) */}
+          <View style={[styles.gridLineV, { left: '50%' }]} />
+          <View style={[styles.gridLineV, { left: '70%' }]} />
+        </>
+      )}
 
-      {/* ── Radar sweep ── */}
+      {/* ── Radar sweep (always on top) ── */}
       <View style={styles.sweepContainer} pointerEvents="none">
         {/* Crosshair */}
         <View style={styles.crosshairH} />
@@ -396,6 +495,117 @@ function TelemetryCell({ label, value }: { label: string; value: string }) {
 }
 
 // ---------------------------------------------------------------------------
+// AnimatedReelColumn
+// ---------------------------------------------------------------------------
+
+interface AnimatedReelColumnProps {
+  /** The 3 final result symbols to land on (indices into INDUSTRIAL_SYMBOLS). */
+  finalSymbols: number[];
+  /** Column index 0–4; used to stagger the spin timing. */
+  colIndex: number;
+  /** Highlight the column border when it contributed to a win. */
+  isWin: boolean;
+  /** Current spin phase from the parent game loop. */
+  spinPhase: SpinPhase;
+}
+
+/**
+ * AnimatedReelColumn
+ *
+ * Renders one reel column with a physics-based spin animation.
+ *
+ * Animation sequence per spin:
+ *   1. Fast timing scroll (accelerating, staggered per column) moves the
+ *      strip from the top through REEL_PREFIX − 2 random symbols.
+ *   2. `spinReel` (from ReelPhysics.ts) takes over for the last 2 symbols,
+ *      overshooting slightly then springing back to the exact stop — the
+ *      classic mechanical-drum settle feel.
+ *
+ * Strip layout (12 symbols total):
+ *   [ ...REEL_PREFIX random... ] [ result[0] ] [ result[1] ] [ result[2] ] [ ...REEL_SUFFIX buffer... ]
+ *                                 ^─ REEL_STOP_Y shows these 3 symbols in the viewport
+ */
+function AnimatedReelColumn({ finalSymbols, colIndex, isWin, spinPhase }: AnimatedReelColumnProps) {
+  const scrollAnim = useRef(new Animated.Value(0)).current;
+  // Strip is stored in state so re-renders happen when it changes.
+  const [strip, setStrip] = useState<number[]>(() => [
+    ...finalSymbols,
+    ...Array.from({ length: REEL_SUFFIX }, () => 0),
+  ]);
+  // Track previous phase to detect the idle→spinning edge.
+  const prevPhaseRef = useRef<SpinPhase>('idle');
+  // Hold onto running animations so we can cancel on unmount.
+  const animRef = useRef<Animated.CompositeAnimation | null>(null);
+
+  useEffect(() => {
+    const prevPhase = prevPhaseRef.current;
+    prevPhaseRef.current = spinPhase;
+
+    // Only act on the idle→spinning transition.
+    if (spinPhase !== 'spinning' || prevPhase === 'spinning') return;
+
+    // ── Build the strip for this spin ──────────────────────────────────────
+    const prefix: number[] = Array.from(
+      { length: REEL_PREFIX },
+      () => Math.floor(Math.random() * INDUSTRIAL_SYMBOLS.length),
+    );
+    const suffix: number[] = Array.from(
+      { length: REEL_SUFFIX },
+      () => Math.floor(Math.random() * INDUSTRIAL_SYMBOLS.length),
+    );
+    setStrip([...prefix, ...finalSymbols, ...suffix]);
+
+    // Reset scroll to show the prefix symbols from the top.
+    scrollAnim.setValue(0);
+
+    // ── Phase 1: fast timing scroll to 2 symbols before the stop ──────────
+    // Stagger: each subsequent reel starts 180 ms later, giving the
+    // characteristic cascade of stopping reels from left to right.
+    const staggerMs = colIndex * 180;
+    const duration = 900 + staggerMs;
+
+    const timingAnim = Animated.timing(scrollAnim, {
+      toValue: REEL_RUSH_TARGET,
+      duration,
+      easing: Easing.in(Easing.poly(2)),
+      useNativeDriver: REEL_USE_NATIVE_DRIVER,
+    });
+
+    animRef.current = timingAnim;
+
+    timingAnim.start(({ finished }) => {
+      if (!finished) return;
+      // ── Phase 2: physics settle via ReelPhysics.spinReel ──────────────
+      spinReel(scrollAnim, REEL_STOP_Y, { symbolHeight: REEL_SYMBOL_H });
+    });
+
+    return () => {
+      animRef.current?.stop();
+    };
+  // Join finalSymbols values into a stable string dependency so the effect
+  // correctly detects symbol changes while avoiding array-reference churn.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinPhase, colIndex, scrollAnim, finalSymbols.join(',')]);
+
+  return (
+    <View style={[styles.reelColumn, isWin && styles.reelColumnWin]}>
+      {/* Clipping viewport: only REEL_VISIBLE_ROWS × REEL_SYMBOL_H pixels tall */}
+      <View style={styles.reelViewport}>
+        <Animated.View style={{ transform: [{ translateY: scrollAnim }] }}>
+          {strip.map((symIdx, i) => (
+            <View key={i} style={styles.symbolCell}>
+              <Text style={styles.symbolGlyph}>
+                {INDUSTRIAL_SYMBOLS[symIdx] ?? '?'}
+              </Text>
+            </View>
+          ))}
+        </Animated.View>
+      </View>
+    </View>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // IndustrialSlotReels
 // ---------------------------------------------------------------------------
 
@@ -404,32 +614,31 @@ interface IndustrialSlotReelsProps {
   visibleSymbols: number[][];
   /** Map of reel index → winning payline highlight. */
   winningReels?: Set<number>;
+  /** Current spin phase – drives the reel animation. */
+  spinPhase?: SpinPhase;
 }
 
 /**
- * Renders five reels of the Industrial Surveillance slot.
- * Each reel column shows three symbol rows in a brushed-steel panel.
+ * Renders five animated reels of the Industrial Surveillance slot.
+ * Each reel column spins with physics-based settle animation and shows a
+ * three-symbol visible window.  Win columns are highlighted in amber.
  */
-function IndustrialSlotReels({ visibleSymbols, winningReels = new Set() }: IndustrialSlotReelsProps) {
+function IndustrialSlotReels({
+  visibleSymbols,
+  winningReels = new Set(),
+  spinPhase = 'idle',
+}: IndustrialSlotReelsProps) {
   return (
     <View style={styles.reelsWrapper}>
       <View style={styles.reelPanel}>
         {visibleSymbols.map((reel, reelIdx) => (
-          <View
+          <AnimatedReelColumn
             key={reelIdx}
-            style={[
-              styles.reelColumn,
-              winningReels.has(reelIdx) && styles.reelColumnWin,
-            ]}
-          >
-            {reel.map((symIdx, rowIdx) => (
-              <View key={rowIdx} style={styles.symbolCell}>
-                <Text style={styles.symbolGlyph}>
-                  {INDUSTRIAL_SYMBOLS[symIdx] ?? '?'}
-                </Text>
-              </View>
-            ))}
-          </View>
+            finalSymbols={reel}
+            colIndex={reelIdx}
+            isWin={winningReels.has(reelIdx)}
+            spinPhase={spinPhase}
+          />
         ))}
       </View>
 
@@ -468,6 +677,11 @@ interface IndustrialCasinoDashboardProps {
   spinning?: boolean;
   /** Number of remaining free spins (>0 while bonus mode is active). */
   freeSpinsRemaining?: number;
+  /**
+   * Current spin phase from the game loop.
+   * Passed to AnimatedReelColumn to drive the reel spin animation.
+   */
+  spinPhase?: SpinPhase;
 }
 
 const DEFAULT_GRID: number[][] = Array.from({ length: 5 }, () => [0, 1, 2]);
@@ -488,6 +702,7 @@ export function IndustrialCasinoDashboard({
   onSpin,
   spinning = false,
   freeSpinsRemaining = 0,
+  spinPhase = 'idle',
 }: IndustrialCasinoDashboardProps) {
   const isDisabled = spinning || !onSpin;
   const buttonLabel = spinning
@@ -518,6 +733,7 @@ export function IndustrialCasinoDashboard({
       <IndustrialSlotReels
         visibleSymbols={visibleSymbols}
         winningReels={winningReels}
+        spinPhase={spinPhase}
       />
 
       {/* ── Free spins indicator ── */}
@@ -780,6 +996,12 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
   },
 
+  // Satellite tile dim overlay (keeps HUD text legible over real satellite imagery)
+  tileDimOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0, 20, 0, 0.45)',
+  },
+
   // Slot reels
   reelsWrapper: {
     position: 'relative',
@@ -807,6 +1029,11 @@ const styles = StyleSheet.create({
   reelColumnWin: {
     borderWidth: 1,
     borderColor: C.AMBER,
+  },
+  /** Clipping window: shows exactly REEL_VISIBLE_ROWS symbol cells. */
+  reelViewport: {
+    height: REEL_VISIBLE_ROWS * REEL_SYMBOL_H,
+    overflow: 'hidden',
   },
   symbolCell: {
     height: 52,
