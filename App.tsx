@@ -15,21 +15,22 @@ import {
   primeAudioForUserGesture,
   SoundEvent,
 } from './ui/SoundDesign';
+import { spinIndustrial } from './ui/slotEngine';
 import { TOKENS } from './ui/designTokens';
 
 // ---------------------------------------------------------------------------
-// Sample data – replace with real game state / state management
+// Constants
 // ---------------------------------------------------------------------------
 
-const SAMPLE_SPINS: SpinRecord[] = [
-  { spinNumber: 1, bet: 1.00, payout: 0.00,  net: -1.00, winSymbol: null,  winLines: 0 },
-  { spinNumber: 2, bet: 1.00, payout: 2.50,  net:  1.50, winSymbol: '🏗',  winLines: 2 },
-  { spinNumber: 3, bet: 1.00, payout: 0.00,  net: -1.00, winSymbol: null,  winLines: 0 },
-  { spinNumber: 4, bet: 1.00, payout: 5.00,  net:  4.00, winSymbol: '📡',  winLines: 3 },
-  { spinNumber: 5, bet: 1.00, payout: 0.00,  net: -1.00, winSymbol: null,  winLines: 0 },
-];
+const BET_SIZE = 1.0;
+const STARTING_CREDITS = 1250;
+const MAX_SPIN_HISTORY = 10;
 
-// 5-reel × 3-row idle symbol grid (indices into INDUSTRIAL_SYMBOLS)
+// Emoji glyphs for each Industrial symbol index (matches INDUSTRIAL_SYMBOLS
+// in IndustrialCasinoDashboard.tsx).
+const INDUSTRIAL_GLYPHS = ['📄', '🛢', '📍', '🔩', '🏗', '📦', '🗝', '📡', '🛸'];
+
+// 5-reel × 3-row idle symbol grid displayed before the first spin
 const IDLE_SYMBOLS: number[][] = [
   [0, 1, 2],
   [3, 4, 5],
@@ -101,8 +102,11 @@ const GPS_COORD = '51.5074°N  0.1278°W';
 // ---------------------------------------------------------------------------
 
 export default function App() {
-  const [credits] = useState(1250);
-  const [totalWin] = useState(12.50);
+  const [credits, setCredits] = useState(STARTING_CREDITS);
+  const [totalWin, setTotalWin] = useState(0);
+  const [visibleSymbols, setVisibleSymbols] = useState<number[][]>(IDLE_SYMBOLS);
+  const [winningReels, setWinningReels] = useState<Set<number>>(new Set());
+  const [spinHistory, setSpinHistory] = useState<SpinRecord[]>([]);
   const [spinPhase, setSpinPhase] = useState<SpinPhase>('idle');
   const [spinNumber, setSpinNumber] = useState(0);
   const [isWin, setIsWin] = useState(false);
@@ -150,34 +154,69 @@ export default function App() {
   }, []);
 
   const handleSpin = useCallback(() => {
-    // Advance spin counter and trigger the Three.js camera + voxel transition
+    // Refuse to spin with insufficient credits
+    if (credits < BET_SIZE) return;
+
     const nextSpin = spinNumber + 1;
     setSpinNumber(nextSpin);
     setSpinPhase('spinning');
     setIsWin(false);
+    setWinningReels(new Set());
 
-    if (!soundsReady.current) return;
-    primeAudioForUserGesture()
-      .then(() => playSound(SoundEvent.REEL_SPIN))
-      .then(() => {
-        // Simulate reel settling after ~1.8 s
-        setTimeout(() => {
-          setSpinPhase('settling');
-          playReelSettleSequence(5);
-          // Determine a mock win on every 4th spin for demo
-          if (nextSpin % 4 === 0) {
-            setIsWin(true);
-            playSound(SoundEvent.WIN).catch(() => {});
-          }
-          // Return to idle after settle animation
-          setTimeout(() => {
-            setSpinPhase('idle');
-            setIsWin(false);
-          }, 800);
-        }, 1800);
-      })
-      .catch(() => {});
-  }, [soundsReady, spinNumber]);
+    // Deduct bet immediately
+    setCredits(c => c - BET_SIZE);
+
+    // Determine result now (deterministic at spin start; result revealed on settle)
+    const result = spinIndustrial(BET_SIZE);
+
+    // Update symbol grid so the Three.js voxel heights react to the new spin
+    setVisibleSymbols(result.grid);
+
+    // Trigger audio if available (non-fatal if sounds are not loaded yet)
+    if (soundsReady.current) {
+      primeAudioForUserGesture()
+        .then(() => playSound(SoundEvent.REEL_SPIN))
+        .catch(() => {});
+    }
+
+    // After reels stop (~1.8 s): reveal outcome
+    setTimeout(() => {
+      setSpinPhase('settling');
+      if (soundsReady.current) playReelSettleSequence(5);
+
+      if (result.payout > 0) {
+        setCredits(c => c + result.payout);
+        setTotalWin(w => w + result.payout);
+        setIsWin(true);
+        setWinningReels(result.winningReels);
+        if (soundsReady.current) playSound(SoundEvent.WIN).catch(() => {});
+      }
+
+      // Record this spin in history (keep last MAX_SPIN_HISTORY entries)
+      setSpinHistory(prev => {
+        const winSym =
+          result.topWinSymbolIndex !== null
+            ? (INDUSTRIAL_GLYPHS[result.topWinSymbolIndex] ?? null)
+            : null;
+        const record: SpinRecord = {
+          spinNumber: nextSpin,
+          bet: BET_SIZE,
+          payout: result.payout,
+          net: result.payout - BET_SIZE,
+          winSymbol: winSym,
+          winLines: result.winLines,
+        };
+        return [...prev.slice(-(MAX_SPIN_HISTORY - 1)), record];
+      });
+
+      // Return to idle after settle animation
+      setTimeout(() => {
+        setSpinPhase('idle');
+        setIsWin(false);
+        setWinningReels(new Set());
+      }, 800);
+    }, 1800);
+  }, [credits, spinNumber]);
 
   return (
     <ErrorBoundary>
@@ -202,7 +241,8 @@ export default function App() {
         <IndustrialCasinoDashboard
           credits={credits}
           totalWin={totalWin}
-          visibleSymbols={IDLE_SYMBOLS}
+          visibleSymbols={visibleSymbols}
+          winningReels={winningReels}
           onSpin={handleSpin}
         />
 
@@ -214,7 +254,7 @@ export default function App() {
           credits={credits}
           gpsCoord={GPS_COORD}
           totalWin={totalWin}
-          spinHistory={SAMPLE_SPINS}
+          spinHistory={spinHistory}
         />
 
         <StatusBar style="light" />
