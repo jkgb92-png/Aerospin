@@ -464,6 +464,10 @@ interface IndustrialCasinoDashboardProps {
    * Wire this to sound playback and reel animation in the parent.
    */
   onSpin?: () => void;
+  /** Disables the SPIN button and shows a spinning state when true. */
+  spinning?: boolean;
+  /** Number of remaining free spins (>0 while bonus mode is active). */
+  freeSpinsRemaining?: number;
 }
 
 const DEFAULT_GRID: number[][] = Array.from({ length: 5 }, () => [0, 1, 2]);
@@ -482,7 +486,15 @@ export function IndustrialCasinoDashboard({
   visibleSymbols = DEFAULT_GRID,
   winningReels = new Set(),
   onSpin,
+  spinning = false,
+  freeSpinsRemaining = 0,
 }: IndustrialCasinoDashboardProps) {
+  const isDisabled = spinning || !onSpin;
+  const buttonLabel = spinning
+    ? 'SPINNING…'
+    : freeSpinsRemaining > 0
+      ? '◈  FREE SPIN'
+      : '◈  SPIN';
   return (
     <View style={styles.root}>
 
@@ -508,19 +520,31 @@ export function IndustrialCasinoDashboard({
         winningReels={winningReels}
       />
 
+      {/* ── Free spins indicator ── */}
+      {freeSpinsRemaining > 0 && (
+        <View style={styles.freeSpinsBar}>
+          <Text style={styles.freeSpinsText}>
+            ◈  FREE SPINS REMAINING: {freeSpinsRemaining}
+          </Text>
+        </View>
+      )}
+
       {/* ── Spin button ── */}
       <Pressable
         style={({ pressed }) => [
           styles.spinButton,
-          pressed && styles.spinButtonPressed,
-          !onSpin && styles.spinButtonDisabled,
+          pressed && !isDisabled && styles.spinButtonPressed,
+          freeSpinsRemaining > 0 && styles.spinButtonFree,
+          isDisabled && styles.spinButtonDisabled,
         ]}
         onPress={onSpin}
-        disabled={!onSpin}
+        disabled={isDisabled}
         accessibilityRole="button"
         accessibilityLabel="Spin the reels"
       >
-        <Text style={styles.spinButtonText}>◈  SPIN</Text>
+        <Text style={[styles.spinButtonText, freeSpinsRemaining > 0 && styles.spinButtonTextFree]}>
+          {buttonLabel}
+        </Text>
       </Pressable>
     </View>
   );
@@ -823,6 +847,10 @@ const styles = StyleSheet.create({
   spinButtonPressed: {
     backgroundColor: C.OLIVE,
   },
+  spinButtonFree: {
+    borderColor: C.SIGNAL_G,
+    backgroundColor: C.OLIVE,
+  },
   spinButtonDisabled: {
     opacity: 0.4,
   },
@@ -831,6 +859,28 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
     letterSpacing: 4,
+    textTransform: 'uppercase',
+  },
+  spinButtonTextFree: {
+    color: C.SIGNAL_G,
+  },
+
+  // Free spins indicator bar
+  freeSpinsBar: {
+    alignSelf: 'center',
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: C.SIGNAL_G,
+    borderRadius: 2,
+    backgroundColor: 'rgba(62, 154, 96, 0.10)',
+  },
+  freeSpinsText: {
+    color: C.SIGNAL_G,
+    fontSize: 10,
+    fontWeight: '700',
+    letterSpacing: 2,
     textTransform: 'uppercase',
   },
 });

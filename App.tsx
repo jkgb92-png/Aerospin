@@ -111,8 +111,12 @@ export default function App() {
   const [spinNumber, setSpinNumber] = useState(0);
   const [isWin, setIsWin] = useState(false);
   const [xrayActive, setXrayActive] = useState(false);
+  const [freeSpinsRemaining, setFreeSpinsRemaining] = useState(0);
   const sceneApiRef = useRef<ThreeSceneApi | null>(null);
   const soundsReady = useRef(false);
+  // Ref mirrors so setTimeout/useEffect closures always see the latest values.
+  const freeSpinsRemainingRef = useRef(0);
+  const pendingAutoSpinRef = useRef(false);
 
   // On web: prevent the page from scrolling so the full-screen canvas and
   // absolutely-positioned UI layers don't overflow the visible viewport.
@@ -153,9 +157,43 @@ export default function App() {
     sceneApiRef.current = api;
   }, []);
 
+  /**
+   * Advance the free-spins countdown after a spin settles.
+   * Decrements the remaining count, deactivates X-Ray when exhausted, and
+   * queues the next auto-spin via pendingAutoSpinRef.
+   */
+  const advanceFreeSpin = useCallback(() => {
+    if (freeSpinsRemainingRef.current <= 0) return;
+    const next = freeSpinsRemainingRef.current - 1;
+    freeSpinsRemainingRef.current = next;
+    setFreeSpinsRemaining(next);
+    if (next === 0) {
+      setXrayActive(false);
+    }
+    pendingAutoSpinRef.current = true;
+  }, []);
+
+  // Fire an auto-spin when the phase returns to idle and a free spin is queued.
+  useEffect(() => {
+    if (spinPhase === 'idle' && pendingAutoSpinRef.current) {
+      pendingAutoSpinRef.current = false;
+      const t = setTimeout(() => handleSpin(), 600);
+      return () => clearTimeout(t);
+    }
+    return undefined;
+  // handleSpin is intentionally omitted from deps: the ref pattern below
+  // ensures the latest version is always called without re-subscribing.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spinPhase]);
+
   const handleSpin = useCallback(() => {
-    // Refuse to spin with insufficient credits
-    if (credits < BET_SIZE) return;
+    // Block re-entry while a spin is already in progress.
+    if (spinPhase !== 'idle') return;
+
+    const isFreeSpin = freeSpinsRemainingRef.current > 0;
+
+    // Refuse paid spins when the player is out of credits.
+    if (!isFreeSpin && credits < BET_SIZE) return;
 
     const nextSpin = spinNumber + 1;
     setSpinNumber(nextSpin);
@@ -163,8 +201,10 @@ export default function App() {
     setIsWin(false);
     setWinningReels(new Set());
 
-    // Deduct bet immediately
-    setCredits(c => c - BET_SIZE);
+    // Deduct bet only for paid (non-free) spins.
+    if (!isFreeSpin) {
+      setCredits(c => c - BET_SIZE);
+    }
 
     // Determine result now (deterministic at spin start; result revealed on settle)
     const result = spinIndustrial(BET_SIZE);
@@ -192,6 +232,15 @@ export default function App() {
         if (soundsReady.current) playSound(SoundEvent.WIN).catch(() => {});
       }
 
+      // Free spins bonus: trigger on 3+ scatters (only if not already in bonus).
+      if (result.freeSpinsTriggered && freeSpinsRemainingRef.current === 0) {
+        const FREE_SPIN_COUNT = 3;
+        freeSpinsRemainingRef.current = FREE_SPIN_COUNT;
+        setFreeSpinsRemaining(FREE_SPIN_COUNT);
+        setXrayActive(true);
+        if (soundsReady.current) playSound(SoundEvent.FREE_SPINS).catch(() => {});
+      }
+
       // Record this spin in history (keep last MAX_SPIN_HISTORY entries)
       setSpinHistory(prev => {
         const winSym =
@@ -200,23 +249,27 @@ export default function App() {
             : null;
         const record: SpinRecord = {
           spinNumber: nextSpin,
-          bet: BET_SIZE,
+          bet: isFreeSpin ? 0 : BET_SIZE,
           payout: result.payout,
-          net: result.payout - BET_SIZE,
+          net: result.payout - (isFreeSpin ? 0 : BET_SIZE),
           winSymbol: winSym,
           winLines: result.winLines,
         };
         return [...prev.slice(-(MAX_SPIN_HISTORY - 1)), record];
       });
 
-      // Return to idle after settle animation
+      // Return to idle after settle animation; schedule next free spin if any.
       setTimeout(() => {
         setSpinPhase('idle');
         setIsWin(false);
         setWinningReels(new Set());
+
+        if (freeSpinsRemainingRef.current > 0) {
+          advanceFreeSpin();
+        }
       }, 800);
     }, 1800);
-  }, [credits, spinNumber]);
+  }, [advanceFreeSpin, credits, spinNumber, spinPhase]);
 
   return (
     <ErrorBoundary>
@@ -243,6 +296,8 @@ export default function App() {
           totalWin={totalWin}
           visibleSymbols={visibleSymbols}
           winningReels={winningReels}
+          spinning={spinPhase !== 'idle'}
+          freeSpinsRemaining={freeSpinsRemaining}
           onSpin={handleSpin}
         />
 
