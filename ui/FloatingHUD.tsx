@@ -37,6 +37,8 @@ export interface SpinRecord {
   winLines: number;
 }
 
+const XP_PER_LEVEL = 100;
+
 // ---------------------------------------------------------------------------
 // FloatingHUD
 // ---------------------------------------------------------------------------
@@ -86,8 +88,8 @@ export function FloatingHUD({
     outputRange: [`-${MAX_TILT_DEG}deg`, `${MAX_TILT_DEG}deg`],
   });
 
-  const level = Math.floor(totalWin / 100) + 1;
-  const xpProgress = (totalWin % 100) / 100;
+  const level = Math.floor(totalWin / XP_PER_LEVEL) + 1;
+  const xpProgress = (totalWin % XP_PER_LEVEL) / XP_PER_LEVEL;
   const recentSpins = spinHistory.slice(-5);
 
   return (

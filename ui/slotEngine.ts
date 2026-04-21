@@ -15,6 +15,7 @@ const ROWS = 3;
 const SCATTER_MIN = 3;
 const FREE_SPIN_COUNT = 10;
 const FREE_SPIN_MULTIPLIER = 2;
+const JACKPOT_INITIAL_VALUE = 500;
 
 const PAY_TABLE: Readonly<Record<number, Record<number, number>>> = {
   8: { 3: 100, 4: 500, 5: 2000 }, // Wild
@@ -86,9 +87,9 @@ export interface SpinResult {
 }
 
 /** Jackpot seed (accumulates across spins in this session) */
-let _jackpotPool = 500;
+let _jackpotPool = JACKPOT_INITIAL_VALUE;
 export function getJackpotPool(): number { return _jackpotPool; }
-export function resetJackpot(): void { _jackpotPool = 500; }
+export function resetJackpot(): void { _jackpotPool = JACKPOT_INITIAL_VALUE; }
 export function addToJackpot(amount: number): void { _jackpotPool += amount; }
 
 export function spinIndustrial(betSize = 1.0, freeSpinMultiplier = 1): SpinResult {

@@ -18,9 +18,10 @@ const FRAME_MS = 16;
 
 const COIN_COUNT = 16;
 
-// ---------------------------------------------------------------------------
-// Props
-// ---------------------------------------------------------------------------
+const MEGA_WIN_RATIO = 200;
+const BIG_WIN_RATIO = 50;
+
+
 
 interface WinCelebrationProps {
   isWin: boolean;
@@ -111,8 +112,8 @@ export function WinCelebration({ isWin, payout, betSize }: WinCelebrationProps) 
   const isAnimating = useRef(false);
 
   const ratio = betSize > 0 ? payout / betSize : 0;
-  const isMegaWin = ratio >= 200;
-  const isBigWin = ratio >= 50;
+  const isMegaWin = ratio >= MEGA_WIN_RATIO;
+  const isBigWin = ratio >= BIG_WIN_RATIO;
 
   useEffect(() => {
     if (!isWin || isAnimating.current) return;
