@@ -126,7 +126,7 @@ export function FloatingHUD({
       <View style={styles.xpBarContainer}>
         <Text style={styles.xpLabel}>XP TO NEXT LEVEL</Text>
         <View style={styles.xpBarTrack}>
-          <View style={[styles.xpBarFill, { width: `${Math.round(xpProgress * 100)}%` as any }]} />
+          <View style={[styles.xpBarFill, { width: `${Math.round(xpProgress * 100)}%` }]} />
         </View>
       </View>
 

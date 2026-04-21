@@ -58,7 +58,7 @@ interface LineWin {
   symbolIndex: number; count: number; multiplier: number; payout: number;
 }
 
-function evaluateLine(lineSymbols: number[], betSize: number, multiplier = 1): LineWin | null {
+function evaluateLine(lineSymbols: number[], betSize: number, freeSpinMultiplier = 1): LineWin | null {
   let anchor: number | null = null;
   for (const sym of lineSymbols) {
     if (sym !== WILD_INDEX && sym !== SCATTER_INDEX) { anchor = sym; break; }
@@ -71,7 +71,7 @@ function evaluateLine(lineSymbols: number[], betSize: number, multiplier = 1): L
   if (count < 3) return null;
   const mul = PAY_TABLE[anchor]?.[count] ?? 0;
   if (mul === 0) return null;
-  return { symbolIndex: anchor, count, multiplier: mul * multiplier, payout: mul * multiplier * betSize };
+  return { symbolIndex: anchor, count, multiplier: mul * freeSpinMultiplier, payout: mul * freeSpinMultiplier * betSize };
 }
 
 export interface SpinResult {
@@ -92,7 +92,7 @@ export function getJackpotPool(): number { return _jackpotPool; }
 export function resetJackpot(): void { _jackpotPool = JACKPOT_INITIAL_VALUE; }
 export function addToJackpot(amount: number): void { _jackpotPool += amount; }
 
-export function spinIndustrial(betSize = 1.0, freeSpinMultiplier = 1): SpinResult {
+export function spinCasino(betSize = 1.0, freeSpinMultiplier = 1): SpinResult {
   const grid: number[][] = [];
   for (let col = 0; col < COLS; col++) {
     const reel: number[] = [];

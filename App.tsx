@@ -17,7 +17,7 @@ import {
   primeAudioForUserGesture,
   SoundEvent,
 } from './ui/SoundDesign';
-import { spinIndustrial, getJackpotPool } from './ui/slotEngine';
+import { spinCasino, getJackpotPool } from './ui/slotEngine';
 import { TOKENS } from './ui/designTokens';
 
 // ---------------------------------------------------------------------------
@@ -216,7 +216,7 @@ export default function App() {
 
     if (!isFreeSpin) setCredits(c => c - currentBet);
 
-    const result = spinIndustrial(currentBet);
+    const result = spinCasino(currentBet);
     setVisibleSymbols(result.grid);
     setJackpot(getJackpotPool());
 
