@@ -4,10 +4,11 @@ import { StatusBar } from 'expo-status-bar';
 import * as Location from 'expo-location';
 
 import { EarthBackdrop } from './ui/EarthBackdrop';
-import { IndustrialCasinoDashboard } from './ui/IndustrialCasinoDashboard';
+import { CasinoDashboard } from './ui/CasinoDashboard';
 import { FloatingHUD, SpinRecord } from './ui/FloatingHUD';
 import { ThreeReelCanvas, ThreeSceneApi, SpinPhase } from './ui/ThreeReelCanvas';
-import { WinFlashOverlay } from './ui/WinFlashOverlay';
+import { WinCelebration } from './ui/WinCelebration';
+import { ParticleField } from './ui/ParticleField';
 import {
   loadSounds,
   unloadSounds,
@@ -16,22 +17,18 @@ import {
   primeAudioForUserGesture,
   SoundEvent,
 } from './ui/SoundDesign';
-import { spinIndustrial } from './ui/slotEngine';
+import { spinIndustrial, getJackpotPool } from './ui/slotEngine';
 import { TOKENS } from './ui/designTokens';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const BET_SIZE = 1.0;
 const STARTING_CREDITS = 1250;
 const MAX_SPIN_HISTORY = 10;
 
-// Emoji glyphs for each Industrial symbol index (matches INDUSTRIAL_SYMBOLS
-// in IndustrialCasinoDashboard.tsx).
-const INDUSTRIAL_GLYPHS = ['📄', '🛢', '📍', '🔩', '🏗', '📦', '🗝', '📡', '🛸'];
+const CASINO_GLYPHS = ['🍒', '🍋', '🍊', '🔔', '⭐', '💎', '7️⃣', '🎯', '🌟'];
 
-// 5-reel × 3-row idle symbol grid displayed before the first spin
 const IDLE_SYMBOLS: number[][] = [
   [0, 1, 2],
   [3, 4, 5],
@@ -41,8 +38,7 @@ const IDLE_SYMBOLS: number[][] = [
 ];
 
 // ---------------------------------------------------------------------------
-// ErrorBoundary – catches render-phase exceptions so the screen never goes
-// fully blank.  Shows a styled fallback instead of a white void.
+// ErrorBoundary
 // ---------------------------------------------------------------------------
 
 interface EBState { error: Error | null }
@@ -71,20 +67,20 @@ class ErrorBoundary extends Component<{ children: ReactNode }, EBState> {
 const errStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#1C1C1C',
+    backgroundColor: TOKENS.color.bg,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 32,
   },
   title: {
-    color: '#D4860A',
+    color: TOKENS.color.gold,
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 2,
     marginBottom: 12,
   },
   message: {
-    color: '#D8D4CC',
+    color: TOKENS.color.white,
     fontSize: 13,
     textAlign: 'center',
     opacity: 0.75,
@@ -93,20 +89,17 @@ const errStyles = StyleSheet.create({
 });
 
 // ---------------------------------------------------------------------------
-// GPS coordinate used across components
+// GPS helpers
 // ---------------------------------------------------------------------------
 
-/** Default coordinate (Royal Observatory, Greenwich) – shown until GPS resolves. */
 const GPS_COORD = '51.5074°N  0.1278°W';
 
-/** Format decimal lat/lon as "DD.DDDDdN  DD.DDDDdE" string. */
 function formatCoord(lat: number, lon: number): string {
   const ns = lat >= 0 ? 'N' : 'S';
   const ew = lon >= 0 ? 'E' : 'W';
   return `${Math.abs(lat).toFixed(4)}°${ns}  ${Math.abs(lon).toFixed(4)}°${ew}`;
 }
 
-/** Offset a decimal degree value by `delta` and format as a coord string. */
 function offsetCoord(lat: number, lon: number, dLat: number, dLon: number): string {
   return formatCoord(lat + dLat, lon + dLon);
 }
@@ -124,22 +117,21 @@ export default function App() {
   const [spinPhase, setSpinPhase] = useState<SpinPhase>('idle');
   const [spinNumber, setSpinNumber] = useState(0);
   const [isWin, setIsWin] = useState(false);
+  const [lastPayout, setLastPayout] = useState(0);
   const [xrayActive, setXrayActive] = useState(false);
   const [freeSpinsRemaining, setFreeSpinsRemaining] = useState(0);
-  // Live GPS coordinate (starts with London default; updated once location resolves).
   const [gpsCoord, setGpsCoord] = useState(GPS_COORD);
-  const [bottomRightCoord, setBottomRightCoord] = useState('51.4974°N  0.1078°W');
+  const [betSize, setBetSize] = useState(1.0);
+  const [jackpot, setJackpot] = useState(getJackpotPool());
   const sceneApiRef = useRef<ThreeSceneApi | null>(null);
   const soundsReady = useRef(false);
-  // Ref mirrors so setTimeout/useEffect closures always see the latest values.
   const freeSpinsRemainingRef = useRef(0);
   const pendingAutoSpinRef = useRef(false);
+  const betSizeRef = useRef(betSize);
 
-  // On web: prevent the page from scrolling so the full-screen canvas and
-  // absolutely-positioned UI layers don't overflow the visible viewport.
-  // react-native-web renders into a div that can grow beyond 100 vh when
-  // flex children have non-zero intrinsic heights, making the page
-  // scrollable and revealing a "ghost" duplicate of the canvas below the fold.
+  // Keep betSizeRef in sync
+  useEffect(() => { betSizeRef.current = betSize; }, [betSize]);
+
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
       const { documentElement: html, body } = document;
@@ -151,11 +143,6 @@ export default function App() {
     }
   }, []);
 
-  // Resolve the player's real GPS location once on mount.
-  // Updates gpsCoord and bottomRightCoord from their London defaults to the
-  // actual position so the SatelliteHUDTile and ThreeReelCanvas show the
-  // correct location.  Errors are silently swallowed so the app still works
-  // offline or when the permission is denied.
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -168,9 +155,6 @@ export default function App() {
         if (!mounted) return;
         const { latitude: lat, longitude: lon } = loc.coords;
         setGpsCoord(formatCoord(lat, lon));
-        // Bottom-right corner is approximately 1 km south-east of the top-left.
-        // At mid-latitudes: 0.01° ≈ 1.1 km latitude; 0.02° ≈ 1.4 km longitude.
-        setBottomRightCoord(offsetCoord(lat, lon, -0.01, 0.02));
       } catch {
         // Non-fatal: keep London default.
       }
@@ -178,19 +162,11 @@ export default function App() {
     return () => { mounted = false; };
   }, []);
 
-  // Load sounds once on mount; unload on unmount.
-  // On web, loadSounds() itself is safe before any user gesture – only
-  // playback (triggered by the SPIN button) requires a prior gesture.
   useEffect(() => {
     let mounted = true;
     loadSounds()
-      .then(() => {
-        if (mounted) soundsReady.current = true;
-      })
-      .catch(() => {
-        // Non-fatal: audio will be silently absent if loading fails
-        // (e.g. unsupported platform, missing permissions)
-      });
+      .then(() => { if (mounted) soundsReady.current = true; })
+      .catch(() => {});
     return () => {
       mounted = false;
       unloadSounds().catch(() => {});
@@ -201,23 +177,19 @@ export default function App() {
     sceneApiRef.current = api;
   }, []);
 
-  /**
-   * Advance the free-spins countdown after a spin settles.
-   * Decrements the remaining count, deactivates X-Ray when exhausted, and
-   * queues the next auto-spin via pendingAutoSpinRef.
-   */
+  const handleBetChange = useCallback((bet: number) => {
+    setBetSize(bet);
+  }, []);
+
   const advanceFreeSpin = useCallback(() => {
     if (freeSpinsRemainingRef.current <= 0) return;
     const next = freeSpinsRemainingRef.current - 1;
     freeSpinsRemainingRef.current = next;
     setFreeSpinsRemaining(next);
-    if (next === 0) {
-      setXrayActive(false);
-    }
+    if (next === 0) setXrayActive(false);
     pendingAutoSpinRef.current = true;
   }, []);
 
-  // Fire an auto-spin when the phase returns to idle and a free spin is queued.
   useEffect(() => {
     if (spinPhase === 'idle' && pendingAutoSpinRef.current) {
       pendingAutoSpinRef.current = false;
@@ -225,19 +197,16 @@ export default function App() {
       return () => clearTimeout(t);
     }
     return undefined;
-  // handleSpin is intentionally omitted from deps: the ref pattern below
-  // ensures the latest version is always called without re-subscribing.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [spinPhase]);
 
   const handleSpin = useCallback(() => {
-    // Block re-entry while a spin is already in progress.
     if (spinPhase !== 'idle') return;
 
+    const currentBet = betSizeRef.current;
     const isFreeSpin = freeSpinsRemainingRef.current > 0;
 
-    // Refuse paid spins when the player is out of credits.
-    if (!isFreeSpin && credits < BET_SIZE) return;
+    if (!isFreeSpin && credits < currentBet) return;
 
     const nextSpin = spinNumber + 1;
     setSpinNumber(nextSpin);
@@ -245,25 +214,18 @@ export default function App() {
     setIsWin(false);
     setWinningReels(new Set());
 
-    // Deduct bet only for paid (non-free) spins.
-    if (!isFreeSpin) {
-      setCredits(c => c - BET_SIZE);
-    }
+    if (!isFreeSpin) setCredits(c => c - currentBet);
 
-    // Determine result now (deterministic at spin start; result revealed on settle)
-    const result = spinIndustrial(BET_SIZE);
-
-    // Update symbol grid so the Three.js voxel heights react to the new spin
+    const result = spinIndustrial(currentBet);
     setVisibleSymbols(result.grid);
+    setJackpot(getJackpotPool());
 
-    // Trigger audio if available (non-fatal if sounds are not loaded yet)
     if (soundsReady.current) {
       primeAudioForUserGesture()
         .then(() => playSound(SoundEvent.REEL_SPIN))
         .catch(() => {});
     }
 
-    // After reels stop (~1.8 s): reveal outcome
     setTimeout(() => {
       setSpinPhase('settling');
       if (soundsReady.current) playReelSettleSequence(5);
@@ -272,45 +234,40 @@ export default function App() {
         setCredits(c => c + result.payout);
         setTotalWin(w => w + result.payout);
         setIsWin(true);
+        setLastPayout(result.payout);
         setWinningReels(result.winningReels);
         if (soundsReady.current) playSound(SoundEvent.WIN).catch(() => {});
       }
 
-      // Free spins bonus: trigger on 3+ scatters (only if not already in bonus).
       if (result.freeSpinsTriggered && freeSpinsRemainingRef.current === 0) {
-        const FREE_SPIN_COUNT = 3;
-        freeSpinsRemainingRef.current = FREE_SPIN_COUNT;
-        setFreeSpinsRemaining(FREE_SPIN_COUNT);
+        const FREE_COUNT = result.freeSpinCount;
+        freeSpinsRemainingRef.current = FREE_COUNT;
+        setFreeSpinsRemaining(FREE_COUNT);
         setXrayActive(true);
         if (soundsReady.current) playSound(SoundEvent.FREE_SPINS).catch(() => {});
       }
 
-      // Record this spin in history (keep last MAX_SPIN_HISTORY entries)
       setSpinHistory(prev => {
         const winSym =
           result.topWinSymbolIndex !== null
-            ? (INDUSTRIAL_GLYPHS[result.topWinSymbolIndex] ?? null)
+            ? (CASINO_GLYPHS[result.topWinSymbolIndex] ?? null)
             : null;
         const record: SpinRecord = {
           spinNumber: nextSpin,
-          bet: isFreeSpin ? 0 : BET_SIZE,
+          bet: isFreeSpin ? 0 : currentBet,
           payout: result.payout,
-          net: result.payout - (isFreeSpin ? 0 : BET_SIZE),
+          net: result.payout - (isFreeSpin ? 0 : currentBet),
           winSymbol: winSym,
           winLines: result.winLines,
         };
         return [...prev.slice(-(MAX_SPIN_HISTORY - 1)), record];
       });
 
-      // Return to idle after settle animation; schedule next free spin if any.
       setTimeout(() => {
         setSpinPhase('idle');
         setIsWin(false);
         setWinningReels(new Set());
-
-        if (freeSpinsRemainingRef.current > 0) {
-          advanceFreeSpin();
-        }
+        if (freeSpinsRemainingRef.current > 0) advanceFreeSpin();
       }, 800);
     }, 1800);
   }, [advanceFreeSpin, credits, spinNumber, spinPhase]);
@@ -318,10 +275,10 @@ export default function App() {
   return (
     <ErrorBoundary>
       <View style={styles.root}>
-        {/* Satellite tile backdrop (fills behind all other UI) */}
         <EarthBackdrop />
 
-        {/* Three.js 3-D reel canvas – web only (native stub renders nothing) */}
+        <ParticleField />
+
         {Platform.OS === 'web' && (
           <ErrorBoundary>
             <ThreeReelCanvas
@@ -334,24 +291,22 @@ export default function App() {
           </ErrorBoundary>
         )}
 
-        {/* Main casino dashboard */}
-        <IndustrialCasinoDashboard
+        <CasinoDashboard
           credits={credits}
           totalWin={totalWin}
-          topLeftCoord={gpsCoord}
-          bottomRightCoord={bottomRightCoord}
           visibleSymbols={visibleSymbols}
           winningReels={winningReels}
           spinning={spinPhase !== 'idle'}
           spinPhase={spinPhase}
           freeSpinsRemaining={freeSpinsRemaining}
           onSpin={handleSpin}
+          betSize={betSize}
+          onBetChange={handleBetChange}
+          jackpot={jackpot}
         />
 
-        {/* Win flash overlay – screen-shake + neon border pulse */}
-        <WinFlashOverlay isWin={isWin} />
+        <WinCelebration isWin={isWin} payout={lastPayout} betSize={betSize} />
 
-        {/* Gyro-tilt HUD overlay pinned to the bottom */}
         <FloatingHUD
           credits={credits}
           gpsCoord={gpsCoord}
