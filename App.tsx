@@ -1,6 +1,7 @@
 import React, { Component, ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import { Platform, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
+import * as Location from 'expo-location';
 
 import { EarthBackdrop } from './ui/EarthBackdrop';
 import { IndustrialCasinoDashboard } from './ui/IndustrialCasinoDashboard';
@@ -95,7 +96,20 @@ const errStyles = StyleSheet.create({
 // GPS coordinate used across components
 // ---------------------------------------------------------------------------
 
+/** Default coordinate (Royal Observatory, Greenwich) – shown until GPS resolves. */
 const GPS_COORD = '51.5074°N  0.1278°W';
+
+/** Format decimal lat/lon as "DD.DDDDdN  DD.DDDDdE" string. */
+function formatCoord(lat: number, lon: number): string {
+  const ns = lat >= 0 ? 'N' : 'S';
+  const ew = lon >= 0 ? 'E' : 'W';
+  return `${Math.abs(lat).toFixed(4)}°${ns}  ${Math.abs(lon).toFixed(4)}°${ew}`;
+}
+
+/** Offset a decimal degree value by `delta` and format as a coord string. */
+function offsetCoord(lat: number, lon: number, dLat: number, dLon: number): string {
+  return formatCoord(lat + dLat, lon + dLon);
+}
 
 // ---------------------------------------------------------------------------
 // App root
@@ -112,6 +126,9 @@ export default function App() {
   const [isWin, setIsWin] = useState(false);
   const [xrayActive, setXrayActive] = useState(false);
   const [freeSpinsRemaining, setFreeSpinsRemaining] = useState(0);
+  // Live GPS coordinate (starts with London default; updated once location resolves).
+  const [gpsCoord, setGpsCoord] = useState(GPS_COORD);
+  const [bottomRightCoord, setBottomRightCoord] = useState('51.4974°N  0.1078°W');
   const sceneApiRef = useRef<ThreeSceneApi | null>(null);
   const soundsReady = useRef(false);
   // Ref mirrors so setTimeout/useEffect closures always see the latest values.
@@ -132,6 +149,33 @@ export default function App() {
       body.style.overflow = 'hidden';
       body.style.margin = '0';
     }
+  }, []);
+
+  // Resolve the player's real GPS location once on mount.
+  // Updates gpsCoord and bottomRightCoord from their London defaults to the
+  // actual position so the SatelliteHUDTile and ThreeReelCanvas show the
+  // correct location.  Errors are silently swallowed so the app still works
+  // offline or when the permission is denied.
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const loc = await Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+        });
+        if (!mounted) return;
+        const { latitude: lat, longitude: lon } = loc.coords;
+        setGpsCoord(formatCoord(lat, lon));
+        // Bottom-right corner is approximately 1 km south-east of the top-left.
+        // At mid-latitudes: 0.01° ≈ 1.1 km latitude; 0.02° ≈ 1.4 km longitude.
+        setBottomRightCoord(offsetCoord(lat, lon, -0.01, 0.02));
+      } catch {
+        // Non-fatal: keep London default.
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
   // Load sounds once on mount; unload on unmount.
@@ -283,7 +327,7 @@ export default function App() {
             <ThreeReelCanvas
               spinPhase={spinPhase}
               spinNumber={spinNumber}
-              gpsCoord={GPS_COORD}
+              gpsCoord={gpsCoord}
               xrayActive={xrayActive}
               onSceneReady={handleSceneReady}
             />
@@ -294,9 +338,12 @@ export default function App() {
         <IndustrialCasinoDashboard
           credits={credits}
           totalWin={totalWin}
+          topLeftCoord={gpsCoord}
+          bottomRightCoord={bottomRightCoord}
           visibleSymbols={visibleSymbols}
           winningReels={winningReels}
           spinning={spinPhase !== 'idle'}
+          spinPhase={spinPhase}
           freeSpinsRemaining={freeSpinsRemaining}
           onSpin={handleSpin}
         />
@@ -307,7 +354,7 @@ export default function App() {
         {/* Gyro-tilt HUD overlay pinned to the bottom */}
         <FloatingHUD
           credits={credits}
-          gpsCoord={GPS_COORD}
+          gpsCoord={gpsCoord}
           totalWin={totalWin}
           spinHistory={spinHistory}
         />
